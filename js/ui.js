@@ -380,10 +380,10 @@ function renderBattle() {
 
 function renderTrainSelect() {
   const games = [
-    { id: 'reaction', icon: '⚡', name: 'Reaction Test', stat: 'SPD', desc: 'Tap when ready!' },
-    { id: 'tapping',  icon: '👊', name: 'Tap Frenzy', stat: 'ATK', desc: 'Tap as fast as you can!' },
-    { id: 'memory',   icon: '🧠', name: 'Memory Match', stat: 'SP.ATK', desc: 'Remember the pattern!' },
-    { id: 'dodge',    icon: '🏃', name: 'Dodge Master', stat: 'DEF', desc: 'Avoid the attacks!' },
+    { id: 'rhythm', icon: '🎵', name: 'Rhythm Battle', stat: 'SPD', desc: 'Hit arrows in sync!' },
+    { id: 'power',  icon: '💪', name: 'Power Strike', stat: 'ATK', desc: 'Stop the meter at max!' },
+    { id: 'memory', icon: '🧠', name: 'Memory Grid', stat: 'SP.ATK', desc: 'Remember the pattern!' },
+    { id: 'dodge',  icon: '🏃', name: 'Dodge Run', stat: 'DEF', desc: 'Dodge & collect coins!' },
   ];
   return `
     <div class="screen-train-select">
@@ -404,64 +404,7 @@ function renderTrainSelect() {
     </div>`;
 }
 
-function renderTraining() {
-  if (!trainGame) return '';
-  switch (trainGame) {
-    case 'reaction': return renderTrainReaction();
-    case 'tapping': return renderTrainTapping();
-    case 'memory': return renderTrainMemory();
-    case 'dodge': return renderTrainDodge();
-    default: return '';
-  }
-}
-
-function renderTrainReaction() {
-  return `
-    <div class="screen-training reaction-game">
-      <h3>⚡ Reaction Test</h3>
-      <div class="reaction-circle ${trainScore === -1 ? 'waiting' : trainScore === -2 ? 'ready' : 'done'}">
-        ${trainScore === -1 ? 'Wait...' : trainScore === -2 ? 'TAP NOW!' : `${trainScore}ms`}
-      </div>
-      <div class="hint">${trainScore >= 0 ? 'A = Finish' : 'Tap A when circle turns green!'}</div>
-    </div>`;
-}
-
-function renderTrainTapping() {
-  return `
-    <div class="screen-training tapping-game">
-      <h3>👊 Tap Frenzy!</h3>
-      <div class="tap-counter">${Math.max(0, trainScore)}</div>
-      <div class="tap-timer">${trainTimer > 0 ? `${(trainTimer/1000).toFixed(1)}s` : 'TIME!'}</div>
-      <div class="tap-target">TAP A!</div>
-      <div class="hint">${trainTimer <= 0 ? 'A = Finish' : 'Tap A rapidly!'}</div>
-    </div>`;
-}
-
-function renderTrainMemory() {
-  return `
-    <div class="screen-training memory-game">
-      <h3>🧠 Memory Match</h3>
-      <div class="memory-display">${trainScore === -1 ? 'Watch the pattern...' : trainScore === -2 ? 'Repeat it! Use ▲▼◄►' : `Score: ${Math.max(0, trainScore)}`}</div>
-      <div class="memory-sequence">${(window._memoryDisplay || []).map(d => `<span class="mem-dir ${d.active ? 'active' : ''}">${d.icon}</span>`).join('')}</div>
-      <div class="hint">${trainScore >= 0 ? 'A = Finish' : 'Watch, then repeat!'}</div>
-    </div>`;
-}
-
-function renderTrainDodge() {
-  return `
-    <div class="screen-training dodge-game">
-      <h3>🏃 Dodge!</h3>
-      <div class="dodge-field">
-        <div class="dodge-player" style="left:${window._dodgeX || 50}%">
-          <img src="${renderCreatureSprite(game.active.dna, game.active.type, game.active.stage, 2)}" draggable="false">
-        </div>
-        ${(window._dodgeObstacles || []).map(o => `<div class="dodge-obstacle" style="left:${o.x}%;top:${o.y}%">💥</div>`).join('')}
-      </div>
-      <div class="dodge-score">Dodged: ${Math.max(0, trainScore)}</div>
-      <div class="dodge-timer">${trainTimer > 0 ? `${(trainTimer/1000).toFixed(1)}s` : 'DONE!'}</div>
-      <div class="hint">${trainTimer <= 0 ? 'A = Finish' : '◄ ► to dodge!'}</div>
-    </div>`;
-}
+// Old training renderers removed — V2 renderers defined after renderEvolving
 
 function renderFeed() {
   const foodList = Object.entries(FOODS);
@@ -1248,13 +1191,13 @@ document.addEventListener('click', (e) => {
 });
 
 function handleTrainSelectInput(btn) {
-  const games = ['reaction', 'tapping', 'memory', 'dodge'];
+  const games = ['rhythm', 'power', 'memory', 'dodge'];
   if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
   else if (btn === 'down') { subIdx = Math.min(games.length - 1, subIdx + 1); SFX.menuMove(); }
   else if (btn === 'a') {
     SFX.train();
     trainGame = games[subIdx];
-    trainScore = -1; // waiting state
+    trainScore = 0;
     startTraining(trainGame);
     setScreen('training');
   }
@@ -1262,171 +1205,479 @@ function handleTrainSelectInput(btn) {
   render();
 }
 
-function startTraining(type) {
-  switch (type) {
-    case 'reaction':
-      trainScore = -1; // waiting
-      const delay = 1500 + Math.random() * 3000;
-      window._reactionStart = 0;
-      setTimeout(() => {
-        trainScore = -2; // ready
-        window._reactionStart = Date.now();
-        render();
-      }, delay);
-      break;
+// ─── V2 Training: Cleanup helper ───
+function cleanupTraining() {
+  if (window._trainInterval) { clearInterval(window._trainInterval); window._trainInterval = null; }
+  if (window._trainTimeout) { clearTimeout(window._trainTimeout); window._trainTimeout = null; }
+  if (window._trainRAF) { cancelAnimationFrame(window._trainRAF); window._trainRAF = null; }
+}
 
-    case 'tapping':
+// ═══════════════════════════════════════════
+// V2 Training Mini-Games (Redesigned)
+// ═══════════════════════════════════════════
+
+function startTraining(type) {
+  cleanupTraining();
+  switch (type) {
+
+    // ── RHYTHM BATTLE: Arrows scroll up, tap matching direction in the hit zone ──
+    case 'rhythm': {
       trainScore = 0;
-      trainTimer = 5000;
-      const tapInterval = setInterval(() => {
-        trainTimer -= 100;
-        if (trainTimer <= 0) {
-          clearInterval(tapInterval);
-          finishTraining();
+      window._rhythmLanes = []; // { dir, y, hit, missed }
+      window._rhythmCombo = 0;
+      window._rhythmMaxCombo = 0;
+      window._rhythmTotal = 0;
+      window._rhythmSpawned = 0;
+      window._rhythmSpeed = 2.5;
+      const dirs = ['left', 'up', 'down', 'right'];
+      const icons = { left: '◄', up: '▲', down: '▼', right: '►' };
+      window._rhythmIcons = icons;
+
+      window._trainInterval = setInterval(() => {
+        // Spawn arrows
+        if (window._rhythmSpawned < 30 && Math.random() < 0.12) {
+          const dir = dirs[Math.floor(Math.random() * 4)];
+          const lane = dirs.indexOf(dir);
+          window._rhythmLanes.push({ dir, lane, y: 0, hit: false, missed: false });
+          window._rhythmSpawned++;
+        }
+        // Move arrows down
+        window._rhythmLanes.forEach(a => { if (!a.hit) a.y += window._rhythmSpeed; });
+        // Speed up over time
+        window._rhythmSpeed = Math.min(5, 2.5 + window._rhythmSpawned * 0.05);
+        // Check missed (past hit zone)
+        window._rhythmLanes.forEach(a => {
+          if (!a.hit && !a.missed && a.y > 95) {
+            a.missed = true;
+            window._rhythmCombo = 0;
+            window._rhythmTotal++;
+          }
+        });
+        // Cleanup old
+        window._rhythmLanes = window._rhythmLanes.filter(a => a.y < 110);
+        // End condition
+        if (window._rhythmSpawned >= 30 && window._rhythmLanes.filter(a => !a.hit && !a.missed).length === 0) {
+          clearInterval(window._trainInterval); window._trainInterval = null;
+          trainScore = Math.floor(trainScore + window._rhythmMaxCombo * 3);
+          render();
         }
         render();
-      }, 100);
-      window._tapInterval = tapInterval;
+      }, 50);
       break;
+    }
 
-    case 'memory':
-      trainScore = -1;
-      window._memorySeq = [];
-      window._memoryInput = [];
-      window._memoryDisplay = [
-        { icon: '▲', dir: 'up', active: false },
-        { icon: '▼', dir: 'down', active: false },
-        { icon: '◄', dir: 'left', active: false },
-        { icon: '►', dir: 'right', active: false },
-      ];
-      window._memoryRound = 0;
-      startMemoryRound();
-      break;
-
-    case 'dodge':
+    // ── POWER STRIKE: Oscillating power meter, stop at the sweet spot ──
+    case 'power': {
       trainScore = 0;
-      trainTimer = 8000;
+      window._powerAngle = 0;
+      window._powerRound = 0;
+      window._powerMaxRounds = 8;
+      window._powerSpeed = 3;
+      window._powerResults = [];
+      window._powerStopped = false;
+
+      window._trainInterval = setInterval(() => {
+        if (!window._powerStopped) {
+          window._powerAngle += window._powerSpeed;
+          if (window._powerAngle > 360) window._powerAngle -= 360;
+        }
+        render();
+      }, 30);
+      break;
+    }
+
+    // ── MEMORY GRID: Light up cells in a grid, reproduce the pattern ──
+    case 'memory': {
+      trainScore = 0;
+      window._memGrid = Array(9).fill(0); // 3x3 grid
+      window._memSeq = [];
+      window._memInput = [];
+      window._memRound = 0;
+      window._memPhase = 'watch'; // watch, input, correct, wrong
+      window._memShowIdx = -1;
+      startMemoryGridRound();
+      break;
+    }
+
+    // ── DODGE RUN: Endless runner, dodge obstacles, collect coins ──
+    case 'dodge': {
+      trainScore = 0;
+      trainTimer = 15000;
       window._dodgeX = 50;
       window._dodgeObstacles = [];
-      const dodgeInterval = setInterval(() => {
-        trainTimer -= 100;
-        // Spawn obstacles
-        if (Math.random() < 0.15) {
-          window._dodgeObstacles.push({ x: Math.random() * 90, y: 0 });
-        }
-        // Move obstacles
-        window._dodgeObstacles = window._dodgeObstacles.map(o => ({ ...o, y: o.y + 5 }));
-        // Check collisions
-        window._dodgeObstacles = window._dodgeObstacles.filter(o => {
-          if (o.y >= 75 && o.y <= 95 && Math.abs(o.x - window._dodgeX) < 15) {
-            trainTimer = 0; // hit!
-            return false;
-          }
-          if (o.y > 100) {
-            trainScore++;
-            return false;
-          }
-          return true;
-        });
-        if (trainTimer <= 0) {
-          clearInterval(dodgeInterval);
-          finishTraining();
-        }
-        render();
-      }, 100);
-      window._dodgeInterval = dodgeInterval;
-      break;
-  }
-}
+      window._dodgeCoins = [];
+      window._dodgeSpeed = 3;
+      window._dodgeLives = 3;
+      window._dodgeDistance = 0;
 
-function startMemoryRound() {
-  window._memoryRound++;
-  const dirs = ['up', 'down', 'left', 'right'];
-  window._memorySeq.push(dirs[Math.floor(Math.random() * 4)]);
-  window._memoryInput = [];
-  trainScore = -1;
-  render();
+      window._trainInterval = setInterval(() => {
+        trainTimer -= 50;
+        window._dodgeDistance++;
+        window._dodgeSpeed = Math.min(7, 3 + window._dodgeDistance * 0.005);
 
-  // Show sequence
-  let i = 0;
-  const showInterval = setInterval(() => {
-    if (i >= window._memorySeq.length) {
-      clearInterval(showInterval);
-      window._memoryDisplay.forEach(d => d.active = false);
-      trainScore = -2; // input mode
-      render();
-      return;
-    }
-    window._memoryDisplay.forEach(d => d.active = d.dir === window._memorySeq[i]);
-    render();
-    i++;
-  }, 600);
-}
-
-function handleTrainingInput(btn) {
-  if (!trainGame) return;
-
-  switch (trainGame) {
-    case 'reaction':
-      if (btn === 'a') {
-        if (trainScore === -2) {
-          // Tap in time!
-          trainScore = Date.now() - window._reactionStart;
-          render();
-        } else if (trainScore === -1) {
-          // Too early!
-          trainScore = 999;
-          render();
-        } else if (trainScore >= 0) {
-          finishTraining();
-        }
-      }
-      if (btn === 'b') { cancelTraining(); }
-      break;
-
-    case 'tapping':
-      if (btn === 'a' && trainTimer > 0) {
-        trainScore++;
-        render();
-      } else if (btn === 'a' && trainTimer <= 0) {
-        finishTraining();
-      }
-      if (btn === 'b') { clearInterval(window._tapInterval); cancelTraining(); }
-      break;
-
-    case 'memory':
-      if (trainScore === -2) { // input mode
-        const dirMap = { up: 'up', down: 'down', left: 'left', right: 'right' };
-        if (dirMap[btn]) {
-          window._memoryInput.push(dirMap[btn]);
-          SFX.menuMove();
-          // Check
-          const idx = window._memoryInput.length - 1;
-          if (window._memoryInput[idx] !== window._memorySeq[idx]) {
-            // Wrong!
-            trainScore = (window._memoryRound - 1) * 10;
-            SFX.error();
-            render();
-            setTimeout(() => finishTraining(), 500);
-          } else if (window._memoryInput.length === window._memorySeq.length) {
-            // Correct! Next round
-            SFX.menuSelect();
-            trainScore = window._memoryRound * 10;
-            if (window._memoryRound >= 8) {
-              finishTraining();
-            } else {
-              setTimeout(() => startMemoryRound(), 500);
+        // Spawn obstacles (varied patterns)
+        if (Math.random() < 0.08 + window._dodgeDistance * 0.0003) {
+          const pattern = Math.random();
+          if (pattern < 0.5) {
+            // Single
+            window._dodgeObstacles.push({ x: 10 + Math.random() * 80, y: -5, w: 12, emoji: '💥' });
+          } else if (pattern < 0.8) {
+            // Double gap
+            const gap = 20 + Math.random() * 30;
+            window._dodgeObstacles.push({ x: gap - 20, y: -5, w: 15, emoji: '🔥' });
+            window._dodgeObstacles.push({ x: gap + 20, y: -5, w: 15, emoji: '🔥' });
+          } else {
+            // Wall with gap
+            const gapX = 15 + Math.random() * 70;
+            for (let wx = 0; wx < 100; wx += 12) {
+              if (Math.abs(wx - gapX) > 15) {
+                window._dodgeObstacles.push({ x: wx, y: -5, w: 10, emoji: '⬛' });
+              }
             }
           }
         }
-      }
-      if (btn === 'a' && trainScore >= 0) { finishTraining(); }
-      if (btn === 'b') { cancelTraining(); }
-      break;
+        // Spawn coins
+        if (Math.random() < 0.06) {
+          window._dodgeCoins.push({ x: 10 + Math.random() * 80, y: -5 });
+        }
 
-    case 'dodge':
-      if (btn === 'left') { window._dodgeX = Math.max(5, window._dodgeX - 12); render(); }
-      if (btn === 'right') { window._dodgeX = Math.min(95, window._dodgeX + 12); render(); }
+        // Move everything
+        window._dodgeObstacles = window._dodgeObstacles.map(o => ({ ...o, y: o.y + window._dodgeSpeed }));
+        window._dodgeCoins = window._dodgeCoins.map(c => ({ ...c, y: c.y + window._dodgeSpeed }));
+
+        // Collision check
+        window._dodgeObstacles = window._dodgeObstacles.filter(o => {
+          if (o.y >= 78 && o.y <= 98 && Math.abs(o.x - window._dodgeX) < (o.w + 8)) {
+            window._dodgeLives--;
+            SFX.hit();
+            if (window._dodgeLives <= 0) {
+              trainTimer = 0;
+            }
+            return false;
+          }
+          return o.y < 105;
+        });
+
+        // Coin collection
+        window._dodgeCoins = window._dodgeCoins.filter(c => {
+          if (c.y >= 75 && c.y <= 95 && Math.abs(c.x - window._dodgeX) < 14) {
+            trainScore += 5;
+            SFX.feed();
+            return false;
+          }
+          return c.y < 105;
+        });
+
+        // Distance points
+        if (window._dodgeDistance % 20 === 0) trainScore++;
+
+        if (trainTimer <= 0) {
+          clearInterval(window._trainInterval); window._trainInterval = null;
+          finishTraining();
+        }
+        render();
+      }, 50);
+      break;
+    }
+  }
+}
+
+// ── Memory Grid helpers ──
+function startMemoryGridRound() {
+  window._memRound++;
+  window._memGrid = Array(9).fill(0);
+  // Add a new random cell to sequence
+  let newCell;
+  do { newCell = Math.floor(Math.random() * 9); }
+  while (window._memSeq.length > 0 && newCell === window._memSeq[window._memSeq.length - 1]);
+  window._memSeq.push(newCell);
+  window._memInput = [];
+  window._memPhase = 'watch';
+  window._memShowIdx = 0;
+
+  // Show sequence one by one
+  let i = 0;
+  const show = () => {
+    if (i >= window._memSeq.length) {
+      window._memGrid = Array(9).fill(0);
+      window._memPhase = 'input';
+      window._memShowIdx = -1;
+      render();
+      return;
+    }
+    window._memGrid = Array(9).fill(0);
+    window._memGrid[window._memSeq[i]] = 1;
+    window._memShowIdx = i;
+    render();
+    i++;
+    window._trainTimeout = setTimeout(() => {
+      window._memGrid = Array(9).fill(0);
+      render();
+      window._trainTimeout = setTimeout(show, 200);
+    }, 500);
+  };
+  window._trainTimeout = setTimeout(show, 400);
+}
+
+// ── Render V2 Training Games ──
+function renderTraining() {
+  if (!trainGame) return '';
+  switch (trainGame) {
+    case 'rhythm': return renderRhythm();
+    case 'power': return renderPower();
+    case 'memory': return renderMemoryGrid();
+    case 'dodge': return renderDodgeV2();
+    default: return '';
+  }
+}
+
+function renderRhythm() {
+  const icons = window._rhythmIcons || {};
+  const lanes = window._rhythmLanes || [];
+  const combo = window._rhythmCombo || 0;
+  const hitZoneY = 80; // percent
+  return `
+    <div class="screen-training rhythm-game">
+      <div class="rhythm-header">
+        <span>⚡ Score: ${trainScore}</span>
+        <span class="rhythm-combo ${combo >= 5 ? 'hot' : ''}">${combo > 0 ? `${combo}x COMBO!` : ''}</span>
+      </div>
+      <div class="rhythm-field">
+        <div class="rhythm-hit-zone" style="top:${hitZoneY}%">
+          ${['◄','▲','▼','►'].map((ic, i) => `<span class="rhythm-target" style="left:${12 + i * 25}%">${ic}</span>`).join('')}
+        </div>
+        ${lanes.filter(a => !a.hit).map(a => `
+          <div class="rhythm-arrow ${a.missed ? 'missed' : ''}" style="top:${a.y}%;left:${12 + a.lane * 25}%">
+            ${icons[a.dir] || '?'}
+          </div>
+        `).join('')}
+      </div>
+      <div class="hint">Match arrows with D-pad! • B = Quit</div>
+    </div>`;
+}
+
+function renderPower() {
+  const angle = window._powerAngle || 0;
+  const round = window._powerRound || 0;
+  const maxR = window._powerMaxRounds || 8;
+  const stopped = window._powerStopped;
+  // Sweet spot is 70-110 degrees (out of 360)
+  const val = Math.sin(angle * Math.PI / 180);
+  const pct = Math.max(0, Math.min(100, (val + 1) * 50));
+  const inSweet = pct >= 70 && pct <= 90;
+  const results = window._powerResults || [];
+  return `
+    <div class="screen-training power-game">
+      <h3>💪 Power Strike (${round}/${maxR})</h3>
+      <div class="power-meter">
+        <div class="power-fill" style="width:${pct}%"></div>
+        <div class="power-sweet-zone"></div>
+        <div class="power-needle" style="left:${pct}%"></div>
+      </div>
+      <div class="power-indicator ${inSweet ? 'sweet' : ''}">${stopped ? (inSweet ? '🎯 PERFECT!' : `${Math.floor(pct)}%`) : '...'}</div>
+      <div class="power-results">${results.map(r => `<span class="${r >= 70 && r <= 90 ? 'perfect' : ''}">${r >= 70 && r <= 90 ? '🎯' : '●'}</span>`).join('')}</div>
+      <div class="power-score">Score: ${trainScore}</div>
+      <div class="hint">${stopped ? 'A = Next round' : 'A = STRIKE!'} • B = Quit</div>
+    </div>`;
+}
+
+function renderMemoryGrid() {
+  const grid = window._memGrid || Array(9).fill(0);
+  const phase = window._memPhase || 'watch';
+  const round = window._memRound || 0;
+  return `
+    <div class="screen-training memory-grid-game">
+      <div class="mem-header">
+        <span>🧠 Round ${round}</span>
+        <span>Score: ${trainScore}</span>
+      </div>
+      <div class="mem-phase">${phase === 'watch' ? 'WATCH...' : phase === 'input' ? 'YOUR TURN!' : phase === 'correct' ? '✅ CORRECT!' : '❌ WRONG!'}</div>
+      <div class="mem-grid">
+        ${grid.map((v, i) => `
+          <div class="mem-cell ${v === 1 ? 'lit' : ''} ${v === 2 ? 'player-lit' : ''} ${v === 3 ? 'wrong-lit' : ''} ${v === 4 ? 'cursor' : ''} ${phase === 'input' ? 'clickable' : ''}" data-cell="${i}"></div>
+        `).join('')}
+      </div>
+      <div class="hint">${phase === 'input' ? 'D-pad + A = Select cell • B = Quit' : phase === 'watch' ? 'Watch the pattern...' : 'A = Continue'}</div>
+    </div>`;
+}
+
+function renderDodgeV2() {
+  const lives = window._dodgeLives || 0;
+  const dist = window._dodgeDistance || 0;
+  return `
+    <div class="screen-training dodge-game-v2">
+      <div class="dodge-hud">
+        <span>${'❤️'.repeat(lives)}${'🖤'.repeat(Math.max(0, 3 - lives))}</span>
+        <span>🪙${trainScore}</span>
+        <span>${(trainTimer / 1000).toFixed(1)}s</span>
+      </div>
+      <div class="dodge-field-v2">
+        <div class="dodge-player-v2" style="left:${window._dodgeX || 50}%">
+          <img src="${renderCreatureSprite(game.active.dna, game.active.type, game.active.stage, 2)}" draggable="false">
+        </div>
+        ${(window._dodgeObstacles || []).map(o => `<div class="dodge-obs" style="left:${o.x}%;top:${o.y}%;width:${o.w || 12}%">${o.emoji}</div>`).join('')}
+        ${(window._dodgeCoins || []).map(c => `<div class="dodge-coin" style="left:${c.x}%;top:${c.y}%">🪙</div>`).join('')}
+        <div class="dodge-ground"></div>
+      </div>
+      <div class="hint">◄ ► to dodge • B = Quit</div>
+    </div>`;
+}
+
+// ── V2 Training Input ──
+function handleTrainingInput(btn) {
+  if (!trainGame) return;
+  if (btn === 'b') { cleanupTraining(); cancelTraining(); return; }
+
+  switch (trainGame) {
+    case 'rhythm': {
+      const dirMap = { up: 'up', down: 'down', left: 'left', right: 'right' };
+      if (dirMap[btn]) {
+        const hitZone = 72;
+        const tolerance = 18;
+        let bestMatch = null;
+        let bestDist = Infinity;
+        for (const a of (window._rhythmLanes || [])) {
+          if (a.hit || a.missed || a.dir !== dirMap[btn]) continue;
+          const dist = Math.abs(a.y - hitZone);
+          if (dist < tolerance && dist < bestDist) {
+            bestMatch = a;
+            bestDist = dist;
+          }
+        }
+        if (bestMatch) {
+          bestMatch.hit = true;
+          const accuracy = Math.max(1, Math.floor((tolerance - bestDist) / tolerance * 10));
+          trainScore += accuracy;
+          window._rhythmCombo = (window._rhythmCombo || 0) + 1;
+          window._rhythmMaxCombo = Math.max(window._rhythmMaxCombo || 0, window._rhythmCombo);
+          window._rhythmTotal = (window._rhythmTotal || 0) + 1;
+          if (window._rhythmCombo >= 5) trainScore += 2; // combo bonus
+          SFX.menuSelect();
+        } else {
+          window._rhythmCombo = 0;
+          SFX.error();
+        }
+        render();
+      }
+      // Check if game ended (all spawned & processed)
+      if (window._rhythmSpawned >= 30 && (window._rhythmLanes || []).filter(a => !a.hit && !a.missed).length === 0 && btn === 'a') {
+        finishTraining();
+      }
+      break;
+    }
+
+    case 'power': {
+      if (btn === 'a') {
+        if (!window._powerStopped) {
+          // Stop the needle!
+          window._powerStopped = true;
+          const val = Math.sin((window._powerAngle || 0) * Math.PI / 180);
+          const pct = Math.max(0, Math.min(100, (val + 1) * 50));
+          const inSweet = pct >= 70 && pct <= 90;
+          window._powerResults = window._powerResults || [];
+          window._powerResults.push(Math.floor(pct));
+          if (inSweet) {
+            trainScore += 15;
+            SFX.menuSelect();
+          } else {
+            trainScore += Math.max(1, Math.floor(pct / 10));
+            SFX.hit();
+          }
+        } else {
+          // Next round
+          window._powerRound = (window._powerRound || 0) + 1;
+          if (window._powerRound >= (window._powerMaxRounds || 8)) {
+            cleanupTraining();
+            finishTraining();
+            return;
+          }
+          window._powerStopped = false;
+          window._powerSpeed = Math.min(8, 3 + window._powerRound * 0.7);
+        }
+        render();
+      }
+      break;
+    }
+
+    case 'memory': {
+      const phase = window._memPhase;
+      if (phase === 'input') {
+        // Navigate grid with D-pad + A to select
+        if (!window._memCursor) window._memCursor = 4; // center
+        const c = window._memCursor;
+        if (btn === 'up' && c >= 3) { window._memCursor -= 3; SFX.menuMove(); }
+        else if (btn === 'down' && c <= 5) { window._memCursor += 3; SFX.menuMove(); }
+        else if (btn === 'left' && c % 3 > 0) { window._memCursor -= 1; SFX.menuMove(); }
+        else if (btn === 'right' && c % 3 < 2) { window._memCursor += 1; SFX.menuMove(); }
+        else if (btn === 'a') {
+          const selected = window._memCursor;
+          window._memInput.push(selected);
+          const idx = window._memInput.length - 1;
+          const expected = window._memSeq[idx];
+
+          if (selected !== expected) {
+            // Wrong!
+            window._memGrid[selected] = 3; // red
+            window._memPhase = 'wrong';
+            SFX.error();
+            trainScore += (window._memRound - 1) * 10;
+            render();
+            window._trainTimeout = setTimeout(() => {
+              cleanupTraining();
+              finishTraining();
+            }, 800);
+          } else {
+            // Correct cell
+            window._memGrid[selected] = 2; // green
+            SFX.menuSelect();
+            if (window._memInput.length === window._memSeq.length) {
+              // Round complete!
+              window._memPhase = 'correct';
+              trainScore += window._memRound * 12;
+              render();
+              if (window._memRound >= 12) {
+                window._trainTimeout = setTimeout(() => { cleanupTraining(); finishTraining(); }, 600);
+              } else {
+                window._trainTimeout = setTimeout(() => startMemoryGridRound(), 700);
+              }
+            }
+          }
+        }
+        // Highlight cursor
+        if (window._memPhase === 'input') {
+          const g = Array(9).fill(0);
+          window._memInput.forEach(i => g[i] = 2);
+          g[window._memCursor] = g[window._memCursor] || 0;
+          if (g[window._memCursor] === 0) g[window._memCursor] = 4; // cursor highlight
+          window._memGrid = g;
+        }
+        render();
+      } else if (phase === 'correct' || phase === 'wrong') {
+        if (btn === 'a') {
+          if (phase === 'wrong') { cleanupTraining(); finishTraining(); }
+        }
+      }
+      break;
+    }
+
+    case 'dodge': {
+      if (btn === 'left') { window._dodgeX = Math.max(5, (window._dodgeX || 50) - 10); render(); }
+      if (btn === 'right') { window._dodgeX = Math.min(95, (window._dodgeX || 50) + 10); render(); }
+      if (trainTimer <= 0 && btn === 'a') { finishTraining(); }
+      break;
+    }
+  }
+}
+
+// Tap on memory grid cells
+document.addEventListener('click', (e) => {
+  if (currentScreen !== 'training' || trainGame !== 'memory') return;
+  const cell = e.target.closest('.mem-cell[data-cell]');
+  if (cell && window._memPhase === 'input') {
+    window._memCursor = parseInt(cell.dataset.cell);
+    handleTrainingInput('a');
+  }
+});
       if (btn === 'a' && trainTimer <= 0) { finishTraining(); }
       if (btn === 'b') { clearInterval(window._dodgeInterval); cancelTraining(); }
       break;
@@ -1434,13 +1685,8 @@ function handleTrainingInput(btn) {
 }
 
 function finishTraining() {
+  cleanupTraining();
   let score = Math.max(0, trainScore);
-
-  // Reaction: invert (lower ms = better)
-  if (trainGame === 'reaction') {
-    score = score < 999 ? Math.max(0, Math.floor((500 - score) / 5)) : 0;
-  }
-
   const reward = getTrainingReward(trainGame, score);
   const c = game.active;
 
@@ -1462,7 +1708,9 @@ function finishTraining() {
 }
 
 function cancelTraining() {
+  cleanupTraining();
   trainGame = null;
+  trainScore = 0;
   SFX.menuBack();
   setScreen('train');
 }

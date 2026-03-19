@@ -1785,3 +1785,151 @@ body {
 
 @keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } }
 @keyframes toast-out { to { opacity: 0; transform: translateX(-50%) translateY(-20px); } }
+
+/* ═══════════════════════════════════════════
+   V2 — Redesigned Training Mini-Games
+   ═══════════════════════════════════════════ */
+
+/* ── Rhythm Battle ── */
+.rhythm-game { padding: 0 !important; height: 100%; display: flex; flex-direction: column; }
+.rhythm-header { display: flex; justify-content: space-between; font-size: 7px; padding: 4px 8px; }
+.rhythm-combo { color: #ffcc00; }
+.rhythm-combo.hot { color: #ff4444; text-shadow: 0 0 6px rgba(255,0,0,0.5); animation: blink 0.3s infinite; }
+
+.rhythm-field {
+  flex: 1; position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,50,30,0.2) 100%);
+}
+
+.rhythm-hit-zone {
+  position: absolute; left: 0; right: 0; height: 12%;
+  border-top: 2px solid rgba(0,255,200,0.4);
+  border-bottom: 2px solid rgba(0,255,200,0.2);
+  background: rgba(0,255,200,0.05);
+  display: flex; align-items: center; justify-content: space-around;
+}
+
+.rhythm-target {
+  font-size: 14px; color: rgba(0,255,200,0.3);
+  width: 25%; text-align: center;
+}
+
+.rhythm-arrow {
+  position: absolute; font-size: 16px; color: #00ffcc;
+  transform: translate(-50%, -50%);
+  text-shadow: 0 0 8px rgba(0,255,200,0.5);
+  transition: none;
+}
+.rhythm-arrow.missed { color: #ff3333; opacity: 0.4; }
+
+/* ── Power Strike ── */
+.power-game { text-align: center; }
+.power-game h3 { font-size: 8px; color: var(--text-accent); margin-bottom: 12px; }
+
+.power-meter {
+  width: 90%; height: 24px; margin: 0 auto 10px;
+  background: rgba(255,255,255,0.08); border-radius: 12px;
+  position: relative; overflow: hidden;
+  border: 2px solid rgba(255,255,255,0.15);
+}
+
+.power-fill {
+  height: 100%; border-radius: 10px;
+  background: linear-gradient(90deg, #ff4444 0%, #ffcc00 50%, #44ff88 75%, #44ff88 85%, #ffcc00 95%, #ff4444 100%);
+  transition: width 0.03s linear;
+}
+
+.power-sweet-zone {
+  position: absolute; top: 0; bottom: 0;
+  left: 70%; width: 20%;
+  background: rgba(0,255,100,0.15);
+  border-left: 2px dashed rgba(0,255,100,0.4);
+  border-right: 2px dashed rgba(0,255,100,0.4);
+}
+
+.power-needle {
+  position: absolute; top: -4px; bottom: -4px; width: 3px;
+  background: #fff; border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255,255,255,0.5);
+  transform: translateX(-50%);
+}
+
+.power-indicator { font-size: 14px; margin: 8px 0; min-height: 20px; }
+.power-indicator.sweet { color: #44ff88; text-shadow: 0 0 10px rgba(0,255,100,0.5); }
+
+.power-results { display: flex; justify-content: center; gap: 4px; margin: 6px 0; font-size: 10px; }
+.power-results .perfect { color: #44ff88; }
+.power-score { font-size: 9px; color: var(--text-accent); }
+
+/* ── Memory Grid ── */
+.memory-grid-game { display: flex; flex-direction: column; height: 100%; align-items: center; }
+.mem-header { display: flex; justify-content: space-between; width: 100%; font-size: 8px; padding: 4px; }
+.mem-phase { font-size: 8px; color: var(--text-accent); margin: 4px 0; text-align: center; min-height: 16px; }
+
+.mem-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 6px; width: 80%; max-width: 200px; aspect-ratio: 1;
+}
+
+.mem-cell {
+  background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.1);
+  border-radius: 8px; aspect-ratio: 1;
+  transition: all 0.15s; cursor: pointer;
+}
+.mem-cell.lit {
+  background: var(--text-accent); border-color: var(--text-accent);
+  box-shadow: 0 0 15px rgba(0,255,200,0.4);
+}
+.mem-cell.player-lit {
+  background: #3399ff; border-color: #3399ff;
+  box-shadow: 0 0 12px rgba(50,150,255,0.4);
+}
+.mem-cell.wrong-lit {
+  background: #ff3333; border-color: #ff3333;
+  box-shadow: 0 0 12px rgba(255,0,0,0.4);
+}
+.mem-cell.clickable:active { transform: scale(0.9); }
+
+/* Cursor highlight for d-pad navigation */
+.mem-cell:nth-child(1) { } /* handled via inline style value 4 */
+
+/* ── Dodge Run V2 ── */
+.dodge-game-v2 { display: flex; flex-direction: column; height: 100%; padding: 0 !important; }
+.dodge-hud {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 7px; padding: 3px 8px; background: rgba(0,0,0,0.3);
+}
+
+.dodge-field-v2 {
+  flex: 1; position: relative; overflow: hidden;
+  background: linear-gradient(180deg, #0a0a2a 0%, #1a1a3a 80%, #2a2a1a 100%);
+}
+
+.dodge-player-v2 {
+  position: absolute; bottom: 8%; transform: translateX(-50%);
+  transition: left 0.08s ease-out;
+  filter: drop-shadow(0 0 6px rgba(0,255,200,0.3));
+}
+.dodge-player-v2 img { width: 28px; height: 28px; image-rendering: pixelated; }
+
+.dodge-obs {
+  position: absolute; font-size: 14px;
+  transform: translate(-50%, -50%); text-align: center;
+}
+
+.dodge-coin {
+  position: absolute; font-size: 12px;
+  transform: translate(-50%, -50%);
+  animation: coin-spin 0.5s linear infinite;
+}
+@keyframes coin-spin { 50% { transform: translate(-50%, -50%) scaleX(0.3); } }
+
+.dodge-ground {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 6%;
+  background: linear-gradient(0deg, #3a3a2a, transparent);
+}
+.mem-cell.cursor {
+  border-color: var(--text-accent);
+  box-shadow: 0 0 8px rgba(0,255,200,0.25);
+  background: rgba(0,255,200,0.08);
+}

@@ -451,10 +451,13 @@ export class BattleEngine {
 export function getTrainingReward(gameType, score) {
   const base = Math.max(1, Math.floor(score / 10));
   switch (gameType) {
-    case 'reaction': return { spd: base, xp: score * 2 };
-    case 'tapping':  return { atk: base, xp: score * 2 };
+    case 'rhythm':   return { spd: base, xp: score * 2 };
+    case 'power':    return { atk: base, xp: score * 2 };
     case 'memory':   return { spAtk: base, xp: score * 2 };
     case 'dodge':    return { def: base, xp: score * 2 };
+    // Legacy names
+    case 'reaction': return { spd: base, xp: score * 2 };
+    case 'tapping':  return { atk: base, xp: score * 2 };
     default: return { xp: score };
   }
 }
