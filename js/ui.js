@@ -1678,11 +1678,6 @@ document.addEventListener('click', (e) => {
     handleTrainingInput('a');
   }
 });
-      if (btn === 'a' && trainTimer <= 0) { finishTraining(); }
-      if (btn === 'b') { clearInterval(window._dodgeInterval); cancelTraining(); }
-      break;
-  }
-}
 
 function finishTraining() {
   cleanupTraining();
