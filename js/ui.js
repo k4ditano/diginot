@@ -355,9 +355,9 @@ function renderBattle() {
   // Unified action list: 4 moves + trap + swap + run
   const allActions = [
     ...moves.map((m, i) => ({ type: 'move', idx: i, label: m.name, sub: `PWR ${m.power || '—'} • ${m.type.toUpperCase()}`, typeColor: TYPES[m.type]?.color || '#888' })),
-    { type: 'trap', idx: 4, label: `📡 Trap`, sub: `x${game.items.dataTrap || 0}`, typeColor: '#9b59b6' },
-    { type: 'swap', idx: 5, label: `🔄 Swap`, sub: `${game.team.filter(c => c.isAlive && c !== battle.player).length} available`, typeColor: '#3498db' },
-    { type: 'run',  idx: 6, label: `🏃 Run`,  sub: `${e._isBoss ? '❌ Can't' : 'Escape!'}`, typeColor: '#e74c3c' },
+    { type: 'trap', idx: 4, label: '📡 Trap', sub: `x${game.items.dataTrap || 0}`, typeColor: '#9b59b6' },
+    { type: 'swap', idx: 5, label: '🔄 Swap', sub: `${game.team.filter(c => c.isAlive && c !== battle.player).length} available`, typeColor: '#3498db' },
+    { type: 'run',  idx: 6, label: '🏃 Run',  sub: `${e._isBoss ? '❌ Cannot run' : 'Escape!'}`, typeColor: '#e74c3c' },
   ];
 
   // Battle log: last 6 messages with turn markers
