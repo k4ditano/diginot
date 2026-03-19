@@ -1,30 +1,10 @@
-const CACHE_NAME = 'diginot-v11';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/js/main.js',
-  '/js/ui.js',
-  '/js/game.js',
-  '/js/data.js',
-  '/js/pixel.js',
-  '/js/audio.js',
-  '/manifest.json',
-];
+// DigiNot — Service Worker
+// Network-first strategy: always fetch fresh, fall back to cache only if offline
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      // Add files one by one so one failure doesn't kill the whole install
-      for (const asset of ASSETS) {
-        try {
-          await cache.add(asset);
-        } catch (err) {
-          console.warn('SW: failed to cache', asset, err);
-        }
-      }
-    })
-  );
+const CACHE_NAME = 'diginot-v11';
+
+self.addEventListener('install', () => {
+  // Don't cache on install — just activate immediately
   self.skipWaiting();
 });
 
@@ -38,7 +18,20 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  // Network-first: try to get from network, fall back to cache
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    fetch(e.request)
+      .then(response => {
+        // Cache successful responses for offline use
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+        }
+        return response;
+      })
+      .catch(() => {
+        // Network failed — try cache
+        return caches.match(e.request);
+      })
   );
 });
