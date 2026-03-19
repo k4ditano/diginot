@@ -467,3 +467,206 @@ export function getAvailableZones(playerLevel) {
 export function rollEncounter() {
   return Math.random() < 0.35; // 35% chance per step
 }
+
+// ═══════════════════════════════════════════
+// V2 — Extended Game State
+// ═══════════════════════════════════════════
+
+import { BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType } from './data.js';
+
+// Patch GameState with V2 fields
+const _origSave = GameState.prototype.save;
+GameState.prototype.save = function() {
+  // Ensure V2 fields exist before saving
+  if (!this.bossesDefeated) this.bossesDefeated = [];
+  if (!this.achievementsUnlocked) this.achievementsUnlocked = [];
+  if (!this.lastLoginDate) this.lastLoginDate = null;
+  if (!this.loginStreak) this.loginStreak = 0;
+  if (!this.totalFusions) this.totalFusions = 0;
+  if (!this.totalPvP) this.totalPvP = 0;
+  if (!this.dailyClaimed) this.dailyClaimed = false;
+
+  const data = {
+    team: this.team.map(c => c.serialize()),
+    storage: this.storage.map(c => c.serialize()),
+    notdex: [...this.notdex],
+    coins: this.coins,
+    items: this.items,
+    foods: this.foods,
+    activeIdx: this.activeIdx,
+    totalSteps: this.totalSteps,
+    totalBattles: this.totalBattles,
+    badges: this.badges,
+    started: this.started,
+    lastSave: Date.now(),
+    // V2 fields
+    bossesDefeated: this.bossesDefeated,
+    achievementsUnlocked: this.achievementsUnlocked,
+    lastLoginDate: this.lastLoginDate,
+    loginStreak: this.loginStreak,
+    totalFusions: this.totalFusions,
+    totalPvP: this.totalPvP,
+    dailyClaimed: this.dailyClaimed,
+  };
+  localStorage.setItem('diginot_save', JSON.stringify(data));
+};
+
+const _origLoad = GameState.prototype.load;
+GameState.prototype.load = function() {
+  const raw = localStorage.getItem('diginot_save');
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    this.team = (data.team || []).map(d => Creature.deserialize(d));
+    this.storage = (data.storage || []).map(d => Creature.deserialize(d));
+    this.notdex = new Set(data.notdex || []);
+    this.coins = data.coins ?? 100;
+    this.items = data.items || { dataTrap: 5, healChip: 3 };
+    this.foods = data.foods || { dataBerry: 5, pixelApple: 2 };
+    this.activeIdx = data.activeIdx || 0;
+    this.totalSteps = data.totalSteps || 0;
+    this.totalBattles = data.totalBattles || 0;
+    this.badges = data.badges || [];
+    this.started = data.started || false;
+    this.lastSave = data.lastSave;
+    // V2 fields
+    this.bossesDefeated = data.bossesDefeated || [];
+    this.achievementsUnlocked = data.achievementsUnlocked || [];
+    this.lastLoginDate = data.lastLoginDate || null;
+    this.loginStreak = data.loginStreak || 0;
+    this.totalFusions = data.totalFusions || 0;
+    this.totalPvP = data.totalPvP || 0;
+    this.dailyClaimed = data.dailyClaimed || false;
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// ─── V2: Boss Encounter ───
+export function generateBoss(zoneId) {
+  const boss = BOSSES[zoneId];
+  if (!boss) return null;
+  const creature = new Creature({
+    dna: boss.dna, type: boss.type, level: boss.level,
+    stage: boss.stage, nickname: `👹 ${boss.nickname}`
+  });
+  // Boss has 1.5x stats
+  const s = creature.stats;
+  s.maxHp = Math.floor(s.maxHp * 1.5);
+  s.hp = s.maxHp;
+  s.atk = Math.floor(s.atk * 1.3);
+  s.def = Math.floor(s.def * 1.3);
+  s.spAtk = Math.floor(s.spAtk * 1.3);
+  s.spDef = Math.floor(s.spDef * 1.3);
+  creature._isBoss = true;
+  creature._zoneId = zoneId;
+  return creature;
+}
+
+// ─── V2: Fusion ───
+export function performFusion(creature1, creature2) {
+  const newDNA = fuseDNA(creature1.dna, creature2.dna);
+  const newType = getFusionType(creature1.type, creature2.type);
+  const newLevel = Math.max(1, Math.floor((creature1.level + creature2.level) / 2) - 3);
+
+  let stage = 'bit';
+  for (const s of STAGES) {
+    if (newLevel >= STAGE_LEVELS[s]) stage = s;
+  }
+
+  const baby = new Creature({ dna: newDNA, type: newType, level: newLevel, stage });
+  // Fusion boost: slightly better base stats
+  baby.stats.maxHp += 5;
+  baby.stats.hp = baby.stats.maxHp;
+  return baby;
+}
+
+// ─── V2: Achievement Checker ───
+export function checkAchievements(gameState) {
+  if (!gameState.achievementsUnlocked) gameState.achievementsUnlocked = [];
+  const newlyUnlocked = [];
+  for (const ach of ACHIEVEMENTS) {
+    if (gameState.achievementsUnlocked.includes(ach.id)) continue;
+    if (ach.check(gameState)) {
+      gameState.achievementsUnlocked.push(ach.id);
+      gameState.coins += ach.reward;
+      newlyUnlocked.push(ach);
+    }
+  }
+  return newlyUnlocked;
+}
+
+// ─── V2: Daily System ───
+export function checkDailyLogin(gameState) {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  if (gameState.lastLoginDate === today) return null; // already claimed today
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (gameState.lastLoginDate === yesterday) {
+    gameState.loginStreak = (gameState.loginStreak || 0) + 1;
+  } else if (gameState.lastLoginDate !== today) {
+    gameState.loginStreak = 1;
+  }
+
+  gameState.lastLoginDate = today;
+  gameState.dailyClaimed = false;
+
+  const dayIdx = ((gameState.loginStreak - 1) % DAILY_REWARDS.length);
+  return DAILY_REWARDS[dayIdx];
+}
+
+export function claimDailyReward(gameState, reward) {
+  if (gameState.dailyClaimed) return false;
+  gameState.coins += reward.coins;
+  if (reward.item) {
+    gameState.items[reward.item] = (gameState.items[reward.item] || 0) + 1;
+  }
+  gameState.dailyClaimed = true;
+  return true;
+}
+
+// ─── V2: PvP Async Battle ───
+export function exportTeamCode(team) {
+  const data = team.map(c => ({ d: c.dna, t: c.type, l: c.level, s: c.stage, n: c.nickname }));
+  return btoa(JSON.stringify(data));
+}
+
+export function importTeamCode(code) {
+  try {
+    const data = JSON.parse(atob(code));
+    return data.map(d => new Creature({ dna: d.d, type: d.t, level: d.l, stage: d.s, nickname: d.n }));
+  } catch { return null; }
+}
+
+export function simulatePvPBattle(team1, team2) {
+  const log = [];
+  let t1idx = 0, t2idx = 0;
+  const t1 = team1.map(c => { const nc = new Creature(c.serialize()); nc.fullHeal(); return nc; });
+  const t2 = team2.map(c => { const nc = new Creature(c.serialize()); nc.fullHeal(); return nc; });
+
+  let turns = 0;
+  while (t1idx < t1.length && t2idx < t2.length && turns < 100) {
+    turns++;
+    const c1 = t1[t1idx], c2 = t2[t2idx];
+    const battle = new BattleEngine(c1, c2);
+
+    // Auto-battle until one faints
+    while (!battle.finished && turns < 200) {
+      const move1 = c1.moves[Math.floor(Math.random() * c1.moves.length)];
+      battle.executeTurn(move1.id);
+      turns++;
+    }
+
+    log.push(...battle.log);
+    if (!c1.isAlive) { t1idx++; log.push(`${c1.displayName} fainted! `); }
+    if (!c2.isAlive) { t2idx++; log.push(`${c2.displayName} fainted!`); }
+  }
+
+  return {
+    winner: t1idx >= t1.length ? 'team2' : 'team1',
+    log,
+    t1remaining: t1.length - t1idx,
+    t2remaining: t2.length - t2idx,
+  };
+}

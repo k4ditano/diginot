@@ -1600,3 +1600,184 @@ body {
     border-radius: 28px 28px 36px 36px;
   }
 }
+
+/* ═══════════════════════════════════════════
+   V2 — New Styles
+   ═══════════════════════════════════════════ */
+
+/* ─── Screen Transition ─── */
+#screen-content {
+  transition: opacity 0.15s ease;
+}
+#screen-content.transitioning {
+  opacity: 0;
+}
+
+/* ─── Fusion ─── */
+.screen-fusion h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 4px; }
+.fusion-desc { font-size: 6px; color: var(--text-dim); text-align: center; margin-bottom: 6px; }
+
+.fusion-slots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fusion-slot {
+  width: 80px;
+  height: 70px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: rgba(255,255,255,0.03);
+  border: 2px dashed rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 6px;
+  transition: all 0.2s;
+}
+
+.fusion-slot img { width: 28px; height: 28px; image-rendering: pixelated; }
+.fusion-slot span { font-size: 5px; color: var(--text-primary); }
+.fusion-slot.selecting { border-color: var(--text-accent); box-shadow: 0 0 10px rgba(0,255,200,0.15); }
+.empty-slot { color: var(--text-dim); }
+
+.fusion-plus {
+  font-size: 18px;
+  color: var(--text-accent);
+  text-shadow: 0 0 8px rgba(0,255,200,0.3);
+}
+
+.fusion-team-list { display: flex; flex-direction: column; gap: 2px; }
+
+.fusion-pick {
+  display: flex; align-items: center; gap: 6px; padding: 3px 6px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 5px; transition: all 0.15s; font-size: 7px;
+}
+.fusion-pick img { width: 20px; height: 20px; image-rendering: pixelated; }
+.fusion-pick.selected { border-color: var(--text-accent); background: rgba(0,255,200,0.06); }
+.fusion-pick.used { opacity: 0.3; }
+
+.fusion-go-btn {
+  display: block; width: 100%; padding: 10px; margin-top: 8px;
+  background: linear-gradient(135deg, rgba(0,255,200,0.15), rgba(100,0,255,0.15));
+  border: 2px solid var(--text-accent); border-radius: 8px;
+  color: var(--text-accent); font-family: var(--pixel-font); font-size: 8px;
+  text-align: center; cursor: pointer;
+  animation: fusion-pulse 1.5s ease-in-out infinite;
+}
+.fusion-go-btn.selected { box-shadow: 0 0 15px rgba(0,255,200,0.25); }
+
+@keyframes fusion-pulse {
+  0%, 100% { border-color: var(--text-accent); }
+  50% { border-color: #cc66ff; }
+}
+
+/* ─── Achievements ─── */
+.screen-achievements h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 6px; }
+.achievement-list { display: flex; flex-direction: column; gap: 3px; }
+
+.achievement-item {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 5px; transition: all 0.15s;
+}
+.achievement-item.unlocked { border-color: rgba(255,200,0,0.3); background: rgba(255,200,0,0.05); }
+.achievement-item.locked { opacity: 0.6; }
+
+.ach-icon { font-size: 16px; }
+.ach-info { flex: 1; }
+.ach-name { font-size: 7px; color: #fff; display: block; }
+.ach-desc { font-size: 5px; color: var(--text-dim); display: block; }
+.ach-reward { font-size: 6px; color: #ffcc00; }
+
+/* ─── Storage ─── */
+.screen-storage h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 6px; }
+.storage-list { display: flex; flex-direction: column; gap: 3px; }
+.storage-item {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 5px; transition: all 0.15s;
+}
+.storage-item.selected { border-color: var(--text-accent); background: rgba(0,255,200,0.06); }
+.storage-item img { width: 24px; height: 24px; image-rendering: pixelated; }
+
+/* ─── PvP ─── */
+.screen-pvp h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 6px; }
+.pvp-result { text-align: center; font-size: 14px; padding: 12px; border-radius: 8px; margin-bottom: 8px; }
+.pvp-result.win { color: #44ff88; background: rgba(0,255,100,0.08); text-shadow: 0 0 15px rgba(0,255,100,0.3); }
+.pvp-result.lose { color: #ff4444; background: rgba(255,0,0,0.08); }
+.pvp-stats { display: flex; justify-content: space-between; font-size: 6px; color: var(--text-dim); margin-bottom: 6px; }
+.pvp-log { font-size: 5px; color: var(--text-dim); max-height: 80px; overflow-y: auto; padding: 4px; background: rgba(0,0,0,0.2); border-radius: 4px; line-height: 1.6; }
+
+/* ─── Daily ─── */
+.screen-daily h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 4px; }
+.daily-streak { text-align: center; font-size: 8px; color: #ff8844; margin-bottom: 6px; }
+
+.daily-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+}
+
+.daily-card {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 4px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px; font-size: 5px; text-align: center; position: relative;
+}
+.daily-card.current { border-color: var(--text-accent); background: rgba(0,255,200,0.08); box-shadow: 0 0 10px rgba(0,255,200,0.15); }
+.daily-card.claimed { opacity: 0.5; }
+.daily-day { font-size: 6px; color: var(--text-accent); }
+.daily-reward-text { font-size: 4px; color: var(--text-dim); }
+.daily-check { font-size: 10px; }
+.daily-claim { font-size: 5px; color: #ffcc00; }
+
+/* ─── Boss Badge ─── */
+.boss-badge {
+  font-size: 12px;
+  filter: drop-shadow(0 0 4px rgba(255,0,0,0.5));
+}
+.boss-badge.defeated { filter: drop-shadow(0 0 4px rgba(255,200,0,0.5)); }
+
+/* ─── Menu Grid 4 col for V2 ─── */
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  flex: 1;
+}
+
+.menu-item {
+  padding: 6px 2px;
+}
+.menu-icon { font-size: 16px; }
+.menu-label { font-size: 5px; }
+
+/* ─── Battle Swap Button ─── */
+.battle-extra-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.swap-btn {
+  flex: 1; padding: 4px;
+  background: rgba(100,200,255,0.08); border: 1px solid rgba(100,200,255,0.2);
+  border-radius: 4px; color: #88ccff; font-family: var(--pixel-font); font-size: 6px;
+  cursor: pointer; text-align: center;
+}
+.swap-btn:active { background: rgba(100,200,255,0.15); }
+
+/* ─── Notification Toast ─── */
+.achievement-toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+  background: rgba(10,15,30,0.95); border: 2px solid #ffcc00;
+  border-radius: 8px; padding: 8px 16px; z-index: 200;
+  animation: toast-in 0.3s ease, toast-out 0.3s ease 2.7s forwards;
+}
+
+@keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(-50%) translateY(-20px); } }

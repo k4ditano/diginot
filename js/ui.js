@@ -4,13 +4,16 @@
 
 import {
   TYPES, STAGES, STAGE_LABELS, ZONES, FOODS, ITEMS, STARTERS,
-  xpForLevel, generateName, randomDNA, getTypeForDNA
+  xpForLevel, generateName, randomDNA, getTypeForDNA,
+  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType
 } from './data.js';
 import { renderCreatureSprite, renderCreatureBlinkSprite } from './pixel.js';
 import { SFX, initAudio, setMuted, isMuted } from './audio.js';
 import {
   Creature, GameState, BattleEngine,
-  generateWildCreature, getAvailableZones, rollEncounter, getTrainingReward
+  generateWildCreature, getAvailableZones, rollEncounter, getTrainingReward,
+  generateBoss, performFusion, checkAchievements, checkDailyLogin, claimDailyReward,
+  exportTeamCode, importTeamCode, simulatePvPBattle
 } from './game.js';
 
 // ─── State ───
@@ -38,18 +41,32 @@ let trainScore = 0;
 let trainTimer = null;
 let shopTab = 0;
 let connectMode = null;
+// V2 state
+let fusionSelect = [null, null]; // indices in team for fusion
+let fusionStep = 0;
+let pvpMode = null;
+let pvpResult = null;
+let dailyReward = null;
+let storageIdx = 0;
+let achievementPage = 0;
+let pendingAchievements = [];
+let battleSwapMode = false;
+let screenTransitioning = false;
 
 // ─── Screen Registry ───
 const MENU_ITEMS = [
-  { id: 'status',  icon: '📊', label: 'Status' },
-  { id: 'team',    icon: '👥', label: 'Team' },
-  { id: 'explore', icon: '🔍', label: 'Explore' },
-  { id: 'train',   icon: '🏋️', label: 'Train' },
-  { id: 'feed',    icon: '🍖', label: 'Feed' },
-  { id: 'notdex',  icon: '📖', label: 'NotDex' },
-  { id: 'shop',    icon: '🛒', label: 'Shop' },
-  { id: 'connect', icon: '📡', label: 'Connect' },
-  { id: 'settings',icon: '⚙️', label: 'Settings' },
+  { id: 'status',      icon: '📊', label: 'Status' },
+  { id: 'team',        icon: '👥', label: 'Team' },
+  { id: 'explore',     icon: '🔍', label: 'Explore' },
+  { id: 'train',       icon: '🏋️', label: 'Train' },
+  { id: 'fusion',      icon: '🧬', label: 'Fusion' },
+  { id: 'feed',        icon: '🍖', label: 'Feed' },
+  { id: 'notdex',      icon: '📖', label: 'NotDex' },
+  { id: 'shop',        icon: '🛒', label: 'Shop' },
+  { id: 'achievements',icon: '🏆', label: 'Achieve' },
+  { id: 'pvp',         icon: '⚔️', label: 'PvP' },
+  { id: 'storage',     icon: '📦', label: 'Storage' },
+  { id: 'settings',    icon: '⚙️', label: 'Settings' },
 ];
 
 // ─── Render Helpers ───
@@ -131,7 +148,7 @@ function renderTitle() {
         <div class="title-text accent">NOT</div>
       </div>
       <div class="title-sub">Digital Creatures • Pocket Device</div>
-      <div class="title-version">v1.0</div>
+      <div class="title-version">v2.0</div>
       <div class="blink-text">— PRESS A TO START —</div>
       ${game.hasSave() ? '<div class="continue-hint">Save data found</div>' : ''}
     </div>`;
@@ -255,20 +272,25 @@ function renderTeam() {
 
 function renderExploreSelect() {
   const zones = getAvailableZones(game.active?.level || 1);
+  const defeated = game.bossesDefeated || [];
   return `
     <div class="screen-explore-select">
       <h2>🔍 Choose Zone</h2>
       <div class="zone-list">
-        ${zones.map((z, i) => `
+        ${zones.map((z, i) => {
+          const bossAvail = BOSSES[z.id];
+          const bossDefeated = defeated.includes(z.id);
+          return `
           <div class="zone-card ${subIdx === i ? 'selected' : ''}" data-idx="${i}" style="border-color:${TYPES[z.types[0]]?.color || '#444'}">
             <span class="zone-icon">${z.icon}</span>
             <span class="zone-name">${z.name}</span>
             <span class="zone-types">${z.types.map(t => TYPES[t]?.icon).join(' ')}</span>
             <span class="zone-level">Lv.${z.minLevel}+</span>
-          </div>
-        `).join('')}
+            ${bossAvail ? `<span class="boss-badge ${bossDefeated ? 'defeated' : ''}">${bossDefeated ? '👑' : '👹'}</span>` : ''}
+          </div>`;
+        }).join('')}
       </div>
-      <div class="hint">▲▼ Navigate • A = Enter • B = Back</div>
+      <div class="hint">▲▼ Navigate • A = Explore • ► = Boss • B = Back</div>
     </div>`;
 }
 
@@ -315,6 +337,7 @@ function renderBattle() {
         </div>
         <div class="battle-extra-actions">
           <button class="trap-btn" data-action="catch">📡 Trap (${game.items.dataTrap || 0})</button>
+          ${game.team.filter(c => c.isAlive && c !== battle.player).length > 0 ? '<button class="swap-btn" data-action="swap">🔄 Swap</button>' : ''}
           <button class="run-btn" data-action="run">🏃 Run</button>
         </div>
       </div>`;
@@ -599,6 +622,188 @@ function renderEvolving() {
     </div>`;
 }
 
+// ═══════════════════════════════════════════
+// V2 — New Screen Renderers
+// ═══════════════════════════════════════════
+
+function renderFusion() {
+  if (game.team.length < 2) {
+    return `<div class="screen-fusion"><h2>🧬 Fusion Lab</h2><div class="empty">Need at least 2 Nots in team!</div><div class="hint">B = Back</div></div>`;
+  }
+  return `
+    <div class="screen-fusion">
+      <h2>🧬 Fusion Lab</h2>
+      <p class="fusion-desc">Combine two Nots to create a new hybrid!</p>
+      <div class="fusion-slots">
+        <div class="fusion-slot ${fusionStep === 0 ? 'selecting' : ''}" data-slot="0">
+          ${fusionSelect[0] !== null ? `
+            <img src="${renderCreatureSprite(game.team[fusionSelect[0]].dna, game.team[fusionSelect[0]].type, game.team[fusionSelect[0]].stage, 3)}" draggable="false">
+            <span>${game.team[fusionSelect[0]].displayName}</span>
+          ` : '<span class="empty-slot">Select 1st</span>'}
+        </div>
+        <div class="fusion-plus">+</div>
+        <div class="fusion-slot ${fusionStep === 1 ? 'selecting' : ''}" data-slot="1">
+          ${fusionSelect[1] !== null ? `
+            <img src="${renderCreatureSprite(game.team[fusionSelect[1]].dna, game.team[fusionSelect[1]].type, game.team[fusionSelect[1]].stage, 3)}" draggable="false">
+            <span>${game.team[fusionSelect[1]].displayName}</span>
+          ` : '<span class="empty-slot">Select 2nd</span>'}
+        </div>
+      </div>
+      ${fusionStep < 2 ? `
+      <div class="fusion-team-list">
+        ${game.team.map((c, i) => `
+          <div class="fusion-pick ${subIdx === i ? 'selected' : ''} ${fusionSelect.includes(i) ? 'used' : ''}" data-idx="${i}">
+            <img src="${renderCreatureSprite(c.dna, c.type, c.stage, 2)}" draggable="false">
+            <span>${c.typeIcon} ${c.displayName} Lv.${c.level}</span>
+          </div>
+        `).join('')}
+      </div>` : `
+      <button class="fusion-go-btn ${subIdx === 0 ? 'selected' : ''}">⚗️ FUSE! (Both Nots consumed)</button>
+      `}
+      <div class="hint">${fusionStep < 2 ? '▲▼ Pick • A = Select • B = Back' : 'A = Fuse! • B = Cancel'}</div>
+    </div>`;
+}
+
+function renderAchievements() {
+  const unlocked = game.achievementsUnlocked || [];
+  const perPage = 5;
+  const pages = Math.ceil(ACHIEVEMENTS.length / perPage);
+  const page = ACHIEVEMENTS.slice(achievementPage * perPage, (achievementPage + 1) * perPage);
+  return `
+    <div class="screen-achievements">
+      <h2>🏆 Achievements (${unlocked.length}/${ACHIEVEMENTS.length})</h2>
+      <div class="achievement-list">
+        ${page.map(a => {
+          const done = unlocked.includes(a.id);
+          return `<div class="achievement-item ${done ? 'unlocked' : 'locked'}">
+            <span class="ach-icon">${done ? a.icon : '🔒'}</span>
+            <div class="ach-info">
+              <span class="ach-name">${a.name}</span>
+              <span class="ach-desc">${a.desc}</span>
+            </div>
+            <span class="ach-reward">${done ? '✅' : `🪙${a.reward}`}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="notdex-pages">Page ${achievementPage + 1}/${pages} ${pages > 1 ? '(◄►)' : ''}</div>
+      <div class="hint">◄► Pages • B = Back</div>
+    </div>`;
+}
+
+function renderStorage() {
+  if (game.storage.length === 0) {
+    return `<div class="screen-storage"><h2>📦 Storage</h2><div class="empty">No Nots in storage!</div><div class="hint">B = Back</div></div>`;
+  }
+  return `
+    <div class="screen-storage">
+      <h2>📦 Storage (${game.storage.length})</h2>
+      <div class="storage-list">
+        ${game.storage.map((c, i) => `
+          <div class="storage-item ${storageIdx === i ? 'selected' : ''}" data-idx="${i}">
+            <img src="${renderCreatureSprite(c.dna, c.type, c.stage, 2)}" class="team-sprite" draggable="false">
+            <div class="team-info">
+              <span>${c.typeIcon} ${c.displayName} Lv.${c.level}</span>
+              ${hpBar(c.stats.hp, c.stats.maxHp)}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="hint">▲▼ Navigate • A = Move to Team • B = Back</div>
+    </div>`;
+}
+
+function renderPvP() {
+  if (pvpResult) {
+    const isWin = pvpResult.winner === 'team1';
+    return `
+      <div class="screen-pvp">
+        <h2>⚔️ PvP Result</h2>
+        <div class="pvp-result ${isWin ? 'win' : 'lose'}">
+          ${isWin ? '🏆 YOU WIN!' : '💀 DEFEATED!'}
+        </div>
+        <div class="pvp-stats">
+          <span>Your team: ${pvpResult.t1remaining} remaining</span>
+          <span>Enemy team: ${pvpResult.t2remaining} remaining</span>
+        </div>
+        <div class="pvp-log">${pvpResult.log.slice(-6).join('<br>')}</div>
+        <div class="hint">A = Continue</div>
+      </div>`;
+  }
+  return `
+    <div class="screen-pvp">
+      <h2>⚔️ PvP Arena</h2>
+      <div class="connect-options">
+        <div class="connect-card ${subIdx === 0 ? 'selected' : ''}">
+          <span class="connect-icon">📤</span>
+          <span>Share Team Code</span>
+          <small>Let friends challenge your team</small>
+        </div>
+        <div class="connect-card ${subIdx === 1 ? 'selected' : ''}">
+          <span class="connect-icon">⚔️</span>
+          <span>Challenge!</span>
+          <small>Enter a friend's team code to battle</small>
+        </div>
+        <div class="connect-card ${subIdx === 2 ? 'selected' : ''}">
+          <span class="connect-icon">📡</span>
+          <span>Share / Receive Not</span>
+          <small>Trade creatures with friends</small>
+        </div>
+      </div>
+      ${pvpMode === 'share' ? `
+        <div class="share-code">
+          <p>Your team code:</p>
+          <div class="code-display" id="pvp-code">${exportTeamCode(game.team)}</div>
+          <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pvp-code').textContent)">📋 Copy</button>
+        </div>
+      ` : ''}
+      ${pvpMode === 'challenge' ? `
+        <div class="receive-code">
+          <p>Enter opponent's team code:</p>
+          <input type="text" id="pvp-input" class="code-input" placeholder="Paste team code...">
+          <button class="receive-btn" id="pvp-fight-btn">⚔️ FIGHT!</button>
+        </div>
+      ` : ''}
+      ${pvpMode === 'trade' ? `
+        <div class="connect-options" style="margin-top:6px">
+          <div class="share-code">
+            <p>Share code for ${game.active?.displayName || 'Not'}:</p>
+            <div class="code-display" id="share-code">${game.active?.toShareCode() || 'No Not!'}</div>
+            <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('share-code').textContent)">📋 Copy</button>
+          </div>
+          <div class="receive-code" style="margin-top:6px">
+            <p>Receive a Not:</p>
+            <input type="text" id="receive-input" class="code-input" placeholder="Paste code...">
+            <button class="receive-btn" id="receive-btn">📥 Receive</button>
+          </div>
+        </div>
+      ` : ''}
+      <div class="hint">▲▼ Choose • A = Select • B = Back</div>
+    </div>`;
+}
+
+function renderDaily() {
+  const streak = game.loginStreak || 0;
+  return `
+    <div class="screen-daily">
+      <h2>📅 Daily Login</h2>
+      <div class="daily-streak">🔥 Streak: ${streak} days</div>
+      <div class="daily-grid">
+        ${DAILY_REWARDS.map((r, i) => {
+          const dayNum = i + 1;
+          const isCurrent = ((streak - 1) % DAILY_REWARDS.length) === i && !game.dailyClaimed;
+          const isPast = streak > 0 && (i < ((streak - 1) % DAILY_REWARDS.length) || game.dailyClaimed);
+          return `<div class="daily-card ${isCurrent ? 'current' : ''} ${isPast ? 'claimed' : ''}">
+            <span class="daily-day">Day ${dayNum}</span>
+            <span class="daily-reward-text">${r.desc}</span>
+            ${isPast ? '<span class="daily-check">✅</span>' : ''}
+            ${isCurrent ? '<span class="daily-claim blink-text">CLAIM!</span>' : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      ${dailyReward && !game.dailyClaimed ? `<div class="hint">A = Claim Reward • B = Back</div>` : `<div class="hint">B = Back</div>`}
+    </div>`;
+}
+
 // ─── Main Render ───
 function render() {
   const content = $screen();
@@ -623,6 +828,12 @@ function render() {
     case 'connect': html = renderConnect(); break;
     case 'settings': html = renderSettings(); break;
     case 'evolving': html = renderEvolving(); break;
+    // V2 screens
+    case 'fusion': html = renderFusion(); break;
+    case 'achievements': html = renderAchievements(); break;
+    case 'storage': html = renderStorage(); break;
+    case 'pvp': html = renderPvP(); break;
+    case 'daily': html = renderDaily(); break;
   }
 
   content.innerHTML = html;
@@ -661,7 +872,13 @@ function handleInput(btn) {
     case 'shop': handleShopInput(btn); break;
     case 'connect': handleConnectInput(btn); break;
     case 'settings': handleSettingsInput(btn); break;
-    case 'evolving': if (btn === 'a') { SFX.menuSelect(); setScreen('home'); } break;
+    case 'evolving': if (btn === 'a') { SFX.menuSelect(); checkAndNotifyAchievements(); setScreen('home'); } break;
+    // V2 screens
+    case 'fusion': handleFusionInput(btn); break;
+    case 'achievements': handleAchievementsInput(btn); break;
+    case 'storage': handleStorageInput(btn); break;
+    case 'pvp': handlePvPInput(btn); break;
+    case 'daily': handleDailyInput(btn); break;
   }
 }
 
@@ -671,8 +888,16 @@ function handleTitleInput(btn) {
     SFX.boot();
     if (game.hasSave()) {
       game.load();
+      // V2: Check daily login
+      dailyReward = checkDailyLogin(game);
+      game.save();
       screenStack = [];
-      setScreen('home');
+      if (dailyReward && !game.dailyClaimed) {
+        setScreen('daily');
+      } else {
+        setScreen('home');
+        checkAndNotifyAchievements();
+      }
     } else {
       subIdx = 0;
       screenStack = [];
@@ -705,7 +930,7 @@ function handleHomeInput(btn) {
 }
 
 function handleMenuInput(btn) {
-  const cols = 3;
+  const cols = 4;
   if (btn === 'up') { menuIdx = Math.max(0, menuIdx - cols); SFX.menuMove(); }
   else if (btn === 'down') { menuIdx = Math.min(MENU_ITEMS.length - 1, menuIdx + cols); SFX.menuMove(); }
   else if (btn === 'left') { menuIdx = Math.max(0, menuIdx - 1); SFX.menuMove(); }
@@ -754,6 +979,17 @@ function handleExploreSelectInput(btn) {
     exploreSteps = 0;
     SFX.menuSelect();
     setScreen('exploring');
+  }
+  else if (btn === 'right') {
+    // Boss battle!
+    const zone = zones[subIdx];
+    if (BOSSES[zone.id]) {
+      SFX.bossAppear();
+      const boss = generateBoss(zone.id);
+      showMessage(`👹 ZONE BOSS: ${boss.displayName} Lv.${boss.level}!\nPrepare for battle!`, () => {
+        startBattle(boss);
+      });
+    }
   }
   else if (btn === 'b') { SFX.menuBack(); goBack(); }
   render();
@@ -858,12 +1094,33 @@ function handleBattleInput(btn) {
 
 function handleBattleEnd() {
   if (battle.winner === 'player') {
-    const xpGain = 15 + battle.enemy.level * 5;
-    const coinGain = 5 + battle.enemy.level * 2;
+    const enemy = battle.enemy;
+    const xpGain = 15 + enemy.level * 5;
+    const coinGain = 5 + enemy.level * 2;
     const leveled = game.active.addXP(xpGain);
     game.coins += coinGain;
     game.active.wins++;
     game.active.happiness = Math.min(100, game.active.happiness + 5);
+
+    // V2: Boss reward
+    if (enemy._isBoss && enemy._zoneId) {
+      if (!game.bossesDefeated) game.bossesDefeated = [];
+      const firstTime = !game.bossesDefeated.includes(enemy._zoneId);
+      if (firstTime) {
+        game.bossesDefeated.push(enemy._zoneId);
+        const bossData = BOSSES[enemy._zoneId];
+        if (bossData?.reward) {
+          game.coins += bossData.reward.coins;
+          if (bossData.reward.item) {
+            game.items[bossData.reward.item] = (game.items[bossData.reward.item] || 0) + 1;
+          }
+          setTimeout(() => {
+            showMessage(`👑 BOSS DEFEATED!\n+${bossData.reward.coins} 🪙\n+1 ${ITEMS[bossData.reward.item]?.name || ''}!`);
+          }, 800);
+        }
+      }
+    }
+
     SFX.victory();
     setTimeout(() => {
       showMessage(`+${xpGain} XP, +${coinGain} 🪙!`);
@@ -874,6 +1131,7 @@ function handleBattleEnd() {
           showMessage(`${game.active.displayName} is ready to evolve! Check Status!`);
         }
       }
+      checkAndNotifyAchievements();
     }, 500);
   } else if (battle.winner === 'capture') {
     const enemy = battle.enemy;
@@ -958,6 +1216,34 @@ document.addEventListener('click', (e) => {
         render();
       });
     }
+  }
+
+  // V2: Team swap in battle
+  const swapBtn = e.target.closest('.swap-btn');
+  if (swapBtn) {
+    e.preventDefault();
+    const alive = game.team.filter((c, i) => c.isAlive && i !== game.activeIdx);
+    if (alive.length === 0) { SFX.error(); return; }
+    // Cycle to next alive team member
+    let nextIdx = (game.activeIdx + 1) % game.team.length;
+    while (!game.team[nextIdx].isAlive || nextIdx === game.activeIdx) {
+      nextIdx = (nextIdx + 1) % game.team.length;
+    }
+    game.activeIdx = nextIdx;
+    battle.player = game.active;
+    SFX.swap();
+    showMessage(`Go, ${game.active.displayName}!`, () => {
+      // Enemy gets a free attack on swap
+      const enemyMove = battle.getAIMove();
+      battle.executeMove(battle.enemy, battle.player, enemyMove);
+      if (!battle.player.isAlive) {
+        battle.finished = true;
+        battle.winner = 'enemy';
+        battleState = 'result';
+        handleBattleEnd();
+      }
+      render();
+    });
   }
 });
 
@@ -1296,6 +1582,154 @@ function handleSettingsInput(btn) {
   }
   else if (btn === 'b') { SFX.menuBack(); goBack(); }
   render();
+}
+
+// ═══════════════════════════════════════════
+// V2 — New Input Handlers
+// ═══════════════════════════════════════════
+
+function handleFusionInput(btn) {
+  if (btn === 'b') {
+    if (fusionStep > 0) { fusionStep--; fusionSelect[fusionStep] = null; }
+    else { fusionSelect = [null, null]; fusionStep = 0; SFX.menuBack(); goBack(); }
+    render(); return;
+  }
+  if (fusionStep < 2) {
+    if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
+    else if (btn === 'down') { subIdx = Math.min(game.team.length - 1, subIdx + 1); SFX.menuMove(); }
+    else if (btn === 'a') {
+      if (fusionSelect.includes(subIdx) && fusionSelect[fusionStep] !== subIdx) { SFX.error(); render(); return; }
+      fusionSelect[fusionStep] = subIdx;
+      fusionStep++;
+      SFX.menuSelect();
+    }
+  } else {
+    if (btn === 'a') {
+      const c1 = game.team[fusionSelect[0]];
+      const c2 = game.team[fusionSelect[1]];
+      if (!c1 || !c2) { SFX.error(); return; }
+      const baby = performFusion(c1, c2);
+      // Remove parents (higher index first to avoid shift issues)
+      const idxs = [fusionSelect[0], fusionSelect[1]].sort((a, b) => b - a);
+      idxs.forEach(idx => game.team.splice(idx, 1));
+      if (game.activeIdx >= game.team.length) game.activeIdx = Math.max(0, game.team.length - 1);
+      game.addToTeam(baby);
+      if (!game.totalFusions) game.totalFusions = 0;
+      game.totalFusions++;
+      game.save();
+      SFX.fusion();
+      fusionSelect = [null, null]; fusionStep = 0;
+      showMessage(`🧬 Fusion complete!\n${c1.displayName} + ${c2.displayName}\n= ${baby.displayName} (${baby.typeIcon} Lv.${baby.level})`, () => {
+        checkAndNotifyAchievements();
+        setScreen('home'); screenStack = [];
+      });
+    }
+  }
+  render();
+}
+
+function handleAchievementsInput(btn) {
+  const pages = Math.ceil(ACHIEVEMENTS.length / 5);
+  if (btn === 'left') { achievementPage = Math.max(0, achievementPage - 1); SFX.menuMove(); }
+  else if (btn === 'right') { achievementPage = Math.min(pages - 1, achievementPage + 1); SFX.menuMove(); }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+function handleStorageInput(btn) {
+  if (btn === 'up') { storageIdx = Math.max(0, storageIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { storageIdx = Math.min(game.storage.length - 1, storageIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    if (game.storage.length > 0 && game.team.length < 6) {
+      const c = game.storage.splice(storageIdx, 1)[0];
+      game.addToTeam(c);
+      if (storageIdx >= game.storage.length) storageIdx = Math.max(0, game.storage.length - 1);
+      SFX.menuSelect();
+      showMessage(`${c.displayName} moved to team!`);
+      game.save();
+    } else if (game.team.length >= 6) {
+      SFX.error();
+      showMessage('Team is full! (6/6)');
+    }
+  }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+function handlePvPInput(btn) {
+  if (pvpResult) {
+    if (btn === 'a') { pvpResult = null; SFX.menuSelect(); render(); return; }
+  }
+  if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { subIdx = Math.min(2, subIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    if (subIdx === 0) { pvpMode = 'share'; SFX.menuSelect(); }
+    else if (subIdx === 1) { pvpMode = 'challenge'; SFX.pvp(); }
+    else if (subIdx === 2) { pvpMode = 'trade'; SFX.menuSelect(); }
+  }
+  else if (btn === 'b') {
+    if (pvpMode) { pvpMode = null; }
+    else { SFX.menuBack(); goBack(); }
+  }
+  render();
+
+  // Bind PvP fight button after render
+  setTimeout(() => {
+    const fightBtn = document.getElementById('pvp-fight-btn');
+    if (fightBtn) fightBtn.addEventListener('click', handlePvPFight);
+    const receiveBtn = document.getElementById('receive-btn');
+    if (receiveBtn) receiveBtn.addEventListener('click', handleReceive);
+  }, 50);
+}
+
+function handlePvPFight() {
+  const input = document.getElementById('pvp-input');
+  if (!input) return;
+  const code = input.value.trim();
+  if (!code) { SFX.error(); showMessage('Enter a team code!'); return; }
+  const enemyTeam = importTeamCode(code);
+  if (!enemyTeam || enemyTeam.length === 0) { SFX.error(); showMessage('Invalid team code!'); return; }
+  SFX.pvp();
+  pvpResult = simulatePvPBattle(game.team, enemyTeam);
+  if (!game.totalPvP) game.totalPvP = 0;
+  game.totalPvP++;
+  if (pvpResult.winner === 'team1') {
+    game.coins += 100;
+    showMessage('🏆 PvP Victory! +100 🪙');
+  }
+  game.save();
+  pvpMode = null;
+  checkAndNotifyAchievements();
+  render();
+}
+
+function handleDailyInput(btn) {
+  if (btn === 'a' && dailyReward && !game.dailyClaimed) {
+    claimDailyReward(game, dailyReward);
+    SFX.daily();
+    showMessage(`📅 Claimed: ${dailyReward.desc}!`);
+    game.save();
+    checkAndNotifyAchievements();
+    render();
+  }
+  else if (btn === 'b' || (btn === 'a' && game.dailyClaimed)) {
+    SFX.menuBack();
+    screenStack = [];
+    setScreen('home');
+    checkAndNotifyAchievements();
+  }
+}
+
+// ─── V2: Achievement Notification System ───
+function checkAndNotifyAchievements() {
+  const newAchs = checkAchievements(game);
+  if (newAchs.length > 0) {
+    game.save();
+    newAchs.forEach(a => {
+      SFX.achievement();
+      showMessage(`🏆 Achievement Unlocked!\n${a.icon} ${a.name}\n${a.desc}\n+${a.reward} 🪙!`);
+    });
+  }
 }
 
 // ─── Idle Animation ───

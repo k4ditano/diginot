@@ -147,6 +147,48 @@ export const SFX = {
     setTimeout(() => playTone(500, 0.1, 'sawtooth', 0.15), 100);
     setTimeout(() => playTone(700, 0.15, 'sawtooth', 0.2), 200);
   },
+
+  // V2 sounds
+  fusion() {
+    const notes = [220, 277, 330, 440, 554, 660, 880, 1047, 1319];
+    notes.forEach((n, i) => setTimeout(() => playTone(n, 0.18, 'sine', 0.2 + i * 0.02), i * 100));
+  },
+
+  bossAppear() {
+    playTone(100, 0.3, 'sawtooth', 0.3);
+    setTimeout(() => playTone(80, 0.3, 'sawtooth', 0.25), 200);
+    setTimeout(() => playTone(120, 0.5, 'sawtooth', 0.35), 400);
+    setTimeout(() => playNoise(0.3, 0.15), 300);
+  },
+
+  achievement() {
+    const notes = [523, 659, 784, 1047, 1319, 1568];
+    notes.forEach((n, i) => setTimeout(() => playTone(n, 0.15, 'triangle', 0.2), i * 80));
+  },
+
+  daily() {
+    playTone(440, 0.1, 'sine', 0.2);
+    setTimeout(() => playTone(554, 0.1, 'sine', 0.2), 120);
+    setTimeout(() => playTone(659, 0.1, 'sine', 0.2), 240);
+    setTimeout(() => playTone(880, 0.25, 'sine', 0.25), 360);
+  },
+
+  pvp() {
+    playTone(330, 0.1, 'square', 0.2);
+    setTimeout(() => playTone(440, 0.1, 'square', 0.2), 80);
+    setTimeout(() => playTone(660, 0.1, 'square', 0.25), 160);
+    setTimeout(() => playTone(880, 0.2, 'square', 0.3), 240);
+  },
+
+  swap() {
+    playTone(600, 0.08, 'triangle', 0.2);
+    setTimeout(() => playTone(400, 0.08, 'triangle', 0.2), 80);
+    setTimeout(() => playTone(800, 0.12, 'triangle', 0.25), 160);
+  },
+
+  screenTransition() {
+    playTone(1200, 0.04, 'square', 0.08);
+  },
 };
 
 export function setMuted(m) { muted = m; }

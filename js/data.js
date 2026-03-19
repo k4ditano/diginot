@@ -245,3 +245,77 @@ export const STARTERS = [
   { dna: 'f8e7d6c5b4a39281', type: 'flux',   nickname: 'Aquabit' },
   { dna: '1234abcd5678ef90', type: 'bloom',  nickname: 'Florabit' },
 ];
+
+// ═══════════════════════════════════════════
+// V2 — Boss Battles
+// ═══════════════════════════════════════════
+export const BOSSES = {
+  forest:  { dna: 'bb00bb00cc11dd22', type: 'bloom',  level: 10, stage: 'byte', nickname: 'Thornlord',  reward: { coins: 200, item: 'superTrap' } },
+  ocean:   { dna: 'aa11ff22ee33dd44', type: 'flux',   level: 12, stage: 'byte', nickname: 'Tidequeen',  reward: { coins: 250, item: 'superTrap' } },
+  volcano: { dna: 'ff0011223344aabb', type: 'ember',  level: 18, stage: 'kilo', nickname: 'Pyroking',   reward: { coins: 400, item: 'ultraTrap' } },
+  mountain:{ dna: 'ee99dd88cc77bb66', type: 'spark',  level: 22, stage: 'kilo', nickname: 'Stormpeak',  reward: { coins: 500, item: 'ultraTrap' } },
+  cave:    { dna: '1100220033004400', type: 'void',   level: 28, stage: 'kilo', nickname: 'Abyssmaw',   reward: { coins: 700, item: 'fullRestore' } },
+  sky:     { dna: 'ffeeddccbbaa9988', type: 'lux',    level: 35, stage: 'mega', nickname: 'Solarius',   reward: { coins: 900, item: 'fullRestore' } },
+  glitch:  { dna: 'deadbeefcafebabe', type: 'glitch', level: 45, stage: 'mega', nickname: 'ERR_NULL',   reward: { coins: 1500, item: 'ultraTrap' } },
+};
+
+// ═══════════════════════════════════════════
+// V2 — Achievements
+// ═══════════════════════════════════════════
+export const ACHIEVEMENTS = [
+  { id: 'first_not',     name: 'First Partner',      desc: 'Choose your first Not',           icon: '🥚', reward: 50,  check: (g) => g.team.length >= 1 },
+  { id: 'catch_5',       name: 'Collector',           desc: 'Discover 5 different Nots',       icon: '📡', reward: 100, check: (g) => g.notdex.size >= 5 },
+  { id: 'catch_15',      name: 'Researcher',          desc: 'Discover 15 different Nots',      icon: '🔬', reward: 300, check: (g) => g.notdex.size >= 15 },
+  { id: 'catch_30',      name: 'Professor',           desc: 'Discover 30 different Nots',      icon: '🎓', reward: 600, check: (g) => g.notdex.size >= 30 },
+  { id: 'win_1',         name: 'First Victory',       desc: 'Win your first battle',           icon: '⚔️', reward: 50,  check: (g) => g.totalBattles >= 1 },
+  { id: 'win_10',        name: 'Fighter',             desc: 'Win 10 battles',                  icon: '🥊', reward: 150, check: (g) => g.totalBattles >= 10 },
+  { id: 'win_50',        name: 'Champion',            desc: 'Win 50 battles',                  icon: '🏆', reward: 500, check: (g) => g.totalBattles >= 50 },
+  { id: 'steps_100',     name: 'Walker',              desc: 'Take 100 steps exploring',        icon: '👟', reward: 75,  check: (g) => g.totalSteps >= 100 },
+  { id: 'steps_500',     name: 'Adventurer',          desc: 'Take 500 steps exploring',        icon: '🧭', reward: 250, check: (g) => g.totalSteps >= 500 },
+  { id: 'evolve_1',      name: 'Metamorphosis',       desc: 'Evolve a Not for the first time', icon: '🦋', reward: 200, check: (g) => g.team.some(c => c.stage !== 'bit') || g.storage.some(c => c.stage !== 'bit') },
+  { id: 'evolve_mega',   name: 'Mega Breeder',        desc: 'Evolve a Not to Mega stage',      icon: '💫', reward: 500, check: (g) => g.team.some(c => c.stage === 'mega' || c.stage === 'giga') },
+  { id: 'full_team',     name: 'Squad Goals',         desc: 'Have a full team of 6 Nots',      icon: '👥', reward: 200, check: (g) => g.team.length >= 6 },
+  { id: 'rich',          name: 'Moneybags',           desc: 'Accumulate 1000 coins',           icon: '💰', reward: 100, check: (g) => g.coins >= 1000 },
+  { id: 'boss_1',        name: 'Boss Slayer',         desc: 'Defeat your first zone boss',     icon: '👹', reward: 300, check: (g) => (g.bossesDefeated || []).length >= 1 },
+  { id: 'boss_all',      name: 'Overlord',            desc: 'Defeat all zone bosses',          icon: '👑', reward: 2000,check: (g) => (g.bossesDefeated || []).length >= 7 },
+  { id: 'fusion_1',      name: 'Gene Splicer',        desc: 'Perform your first fusion',       icon: '🧬', reward: 200, check: (g) => (g.totalFusions || 0) >= 1 },
+  { id: 'fusion_5',      name: 'Mad Scientist',       desc: 'Perform 5 fusions',               icon: '⚗️', reward: 500, check: (g) => (g.totalFusions || 0) >= 5 },
+  { id: 'daily_7',       name: 'Dedicated',           desc: 'Login 7 days in a row',           icon: '📅', reward: 300, check: (g) => (g.loginStreak || 0) >= 7 },
+  { id: 'pvp_1',         name: 'Challenger',           desc: 'Complete a PvP battle',           icon: '🎯', reward: 200, check: (g) => (g.totalPvP || 0) >= 1 },
+  { id: 'glitch_catch',  name: 'Bug Hunter',          desc: 'Catch a Glitch-type Not',         icon: '💀', reward: 500, check: (g) => [...g.notdex].some(d => getTypeForDNA(d) === 'glitch') || g.team.some(c => c.type === 'glitch') },
+];
+
+// ═══════════════════════════════════════════
+// V2 — Daily Rewards
+// ═══════════════════════════════════════════
+export const DAILY_REWARDS = [
+  { day: 1, coins: 50,  item: null,        desc: '50 coins' },
+  { day: 2, coins: 75,  item: 'dataTrap',  desc: '75 coins + Data Trap' },
+  { day: 3, coins: 100, item: 'healChip',  desc: '100 coins + Heal Chip' },
+  { day: 4, coins: 125, item: 'dataTrap',  desc: '125 coins + Data Trap' },
+  { day: 5, coins: 150, item: 'superTrap', desc: '150 coins + Super Trap' },
+  { day: 6, coins: 200, item: 'healChip',  desc: '200 coins + Heal Chip' },
+  { day: 7, coins: 500, item: 'ultraTrap', desc: '500 coins + Ultra Trap!' },
+];
+
+// ═══════════════════════════════════════════
+// V2 — Fusion helpers
+// ═══════════════════════════════════════════
+export function fuseDNA(dna1, dna2) {
+  let result = '';
+  for (let i = 0; i < 16; i++) {
+    const c1 = parseInt(dna1[i] || '0', 16);
+    const c2 = parseInt(dna2[i] || '0', 16);
+    // XOR with random mutation
+    let val = c1 ^ c2;
+    if (Math.random() < 0.2) val = (val + Math.floor(Math.random() * 4)) & 0xF;
+    result += val.toString(16);
+  }
+  return result;
+}
+
+export function getFusionType(type1, type2) {
+  if (type1 === type2) return type1;
+  if (Math.random() < 0.1) return 'glitch'; // 10% chance of glitch fusion
+  return Math.random() < 0.5 ? type1 : type2;
+}
