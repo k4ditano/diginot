@@ -2245,42 +2245,33 @@ let materialsPage = 0;
 function renderMaterials() {
   const mats = game.materials || {};
   const entries = Object.entries(mats).filter(([, qty]) => qty > 0);
-  const perPage = 6;
-  const page = entries.slice(materialsPage * perPage, (materialsPage + 1) * perPage);
-  const totalPages = Math.max(1, Math.ceil(entries.length / perPage));
-
   return `
     <div class="screen-materials">
       <h2>📦 Items & Materials</h2>
       <div class="mats-grid">
-        ${entries.length === 0 ? '<p class="empty-hint">No materials yet! Battle to collect.</p>' : ''}
-        ${page.map(([key, qty], i) => {
+        ${entries.length === 0 ? '<span class="empty-hint">No materials yet! Battle to collect.</span>' : ''}
+        ${entries.map(([key, qty], i) => {
           const info = MATERIALS[key] || ITEMS[key] || {};
-          const isItem = !!ITEMS[key];
           return `<div class="mat-card ${subIdx === i ? 'selected' : ''}" data-key="${key}">
             <span class="mat-icon">${info.icon || '📦'}</span>
             <span class="mat-name">${info.name || key}</span>
             <span class="mat-qty">x${qty}</span>
-            <span class="mat-desc">${info.desc || ''}</span>
           </div>`;
         }).join('')}
       </div>
-      ${entries.length > perPage ? `<div class="page-hint">▲▼ Page ${materialsPage + 1}/${totalPages}</div>` : ''}
       <div class="hint">A = Use • B = Back</div>
     </div>`;
 }
 
 function handleMaterialsInput(btn) {
   const mats = Object.entries(game.materials || {}).filter(([, qty]) => qty > 0);
-  const perPage = 6;
-  if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
-  else if (btn === 'down') { subIdx = Math.min(mats.length - 1, subIdx + 1); SFX.menuMove(); }
-  else if (btn === 'left') { materialsPage = Math.max(0, materialsPage - 1); subIdx = 0; SFX.menuMove(); }
-  else if (btn === 'right') { materialsPage++; subIdx = 0; SFX.menuMove(); }
+  if (btn === 'up') { subIdx = Math.max(0, subIdx - 2); SFX.menuMove(); }
+  else if (btn === 'down') { subIdx = Math.min(mats.length - 1, subIdx + 2); SFX.menuMove(); }
+  else if (btn === 'left') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
+  else if (btn === 'right') { subIdx = Math.min(mats.length - 1, subIdx + 1); SFX.menuMove(); }
   else if (btn === 'a') {
     const [key] = mats[subIdx] || [];
     if (key === 'notEssence') {
-      // Instantly boost XP of active Not
       game.active.addXP(500);
       game.materials[key]--;
       SFX.levelUp();
@@ -2302,16 +2293,16 @@ function renderCrafting() {
       <div class="craft-list">
         ${recipes.map(([id, r], i) => {
           const can = canCraft(game, id);
-          return `<div class="craft-card ${craftingIdx === i ? 'selected' : ''} ${can ? 'can-craft' : 'cannot'}">
+          const costs = Object.entries(r.materials).map(([m, q]) => {
+            const info = MATERIALS[m] || {};
+            const has = game.materials?.[m] || 0;
+            return `${info.icon || '📦'} ${has}/${q}`;
+          }).join(' ');
+          return `<div class="craft-card ${craftingIdx === i ? 'selected' : ''} ${can ? 'can-craft' : 'cannot'}" data-idx="${i}">
             <span class="craft-icon">${r.icon || '📦'}</span>
             <div class="craft-info">
-              <span class="craft-name">${r.name}</span>
-              <span class="craft-desc">${r.desc || ''}</span>
-              <span class="craft-cost">${Object.entries(r.materials).map(([m, q]) => {
-                const info = MATERIALS[m] || {};
-                const has = game.materials?.[m] || 0;
-                return `${info.icon || m} ${has}/${q}`;
-              }).join(' · ')}</span>
+              <span>${r.name}</span>
+              <small>${r.desc || costs}</small>
             </div>
             <span class="craft-status">${can ? '✅' : '🔒'}</span>
           </div>`;
