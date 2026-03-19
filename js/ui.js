@@ -98,7 +98,7 @@ function renderMessage() {
   if (messageQueue.length === 0) return;
   const msg = messageQueue[0];
   const el = $('#message-overlay');
-  el.innerHTML = `<div class="msg-box"><p>${msg.text}</p><span class="msg-hint">▼ A</span></div>`;
+  el.innerHTML = `<div class="msg-box"><p>${msg.text}</p><span class="msg-hint">TAP to continue</span></div>`;
   el.classList.add('active');
 }
 
@@ -849,9 +849,9 @@ function render() {
 
 // ─── Input Handling ───
 function handleInput(btn) {
-  // Handle messages first
+  // Handle messages first — any button dismisses
   if (messageQueue.length > 0) {
-    if (btn === 'a') { SFX.menuSelect(); dismissMessage(); }
+    if (btn === 'a' || btn === 'b') { SFX.menuSelect(); dismissMessage(); }
     return;
   }
 
@@ -1840,6 +1840,20 @@ export function init() {
   startIdleAnimation();
   startLifeCycle();
   startAutoSave();
+
+  // Tap-to-dismiss message overlay (touch + click)
+  const overlay = document.getElementById('message-overlay');
+  if (overlay) {
+    overlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (messageQueue.length > 0) { SFX.menuSelect(); dismissMessage(); }
+    });
+    overlay.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (messageQueue.length > 0) { SFX.menuSelect(); dismissMessage(); }
+    }, { passive: false });
+  }
 
   // Prevent double-tap zoom on mobile
   document.addEventListener('touchstart', (e) => {
