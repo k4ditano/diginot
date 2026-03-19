@@ -5,7 +5,8 @@
 import {
   TYPES, STAGES, STAGE_LEVELS, TYPE_CHART, MOVES, MOVE_POOLS,
   ZONES, FOODS, ITEMS, STARTERS,
-  generateName, generateStats, xpForLevel, hashDNA, randomDNA, getTypeForDNA
+  generateName, generateStats, xpForLevel, hashDNA, randomDNA, getTypeForDNA,
+  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType
 } from './data.js';
 
 // ─── Creature Class ───
@@ -475,7 +476,7 @@ export function rollEncounter() {
 // V2 — Extended Game State
 // ═══════════════════════════════════════════
 
-import { BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType } from './data.js';
+// V2 imports merged to top of file
 
 // Patch GameState with V2 fields
 const _origSave = GameState.prototype.save;

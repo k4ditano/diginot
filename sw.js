@@ -1,4 +1,4 @@
-const CACHE_NAME = 'diginot-v5';
+const CACHE_NAME = 'diginot-v6';
 const ASSETS = [
   '/',
   '/index.html',
