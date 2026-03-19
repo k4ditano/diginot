@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="DigiNot — Digital Creatures Pocket Device">
+  <title>DigiNot</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="digivice">
+    <!-- Antenna / Clip -->
+    <div class="antenna">
+      <div class="antenna-base"></div>
+      <div class="antenna-tip"></div>
+    </div>
+
+    <!-- Device Body -->
+    <div class="device-body">
+      <!-- Screen Bezel -->
+      <div class="screen-bezel">
+        <div class="screen-frame">
+          <!-- Status LEDs -->
+          <div class="led-row">
+            <div class="led led-power"></div>
+            <span class="device-label">D-NOT LINK SYSTEM</span>
+            <div class="led led-link"></div>
+          </div>
+
+          <!-- Main Screen -->
+          <div id="screen">
+            <div id="screen-content"></div>
+            <div class="scanlines"></div>
+            <div class="screen-glare"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls (outside device-body for proper flex layout) -->
+    <div id="controls">
+      <div class="controls-row">
+        <!-- D-Pad -->
+        <div class="dpad">
+          <button class="dpad-btn up" data-btn="up">▲</button>
+          <button class="dpad-btn left" data-btn="left">◄</button>
+          <button class="dpad-btn center" data-btn="menu">●</button>
+          <button class="dpad-btn right" data-btn="right">►</button>
+          <button class="dpad-btn down" data-btn="down">▼</button>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-btns">
+          <button class="btn-action btn-a" data-btn="a">A</button>
+          <button class="btn-action btn-b" data-btn="b">B</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom decoration -->
+    <div class="device-bottom">
+      <div class="grip-lines">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Message Overlay -->
+  <div id="message-overlay"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

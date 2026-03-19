@@ -1,0 +1,17 @@
+{
+  "name": "DigiNot",
+  "short_name": "DigiNot",
+  "description": "Digital Creatures Pocket Device — They're NOT Digimon... they're better.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0a0a1e",
+  "background_color": "#050510",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232a5a8c'/><rect x='15' y='20' width='70' height='50' rx='8' fill='%230a0e1a'/><text x='50' y='52' text-anchor='middle' font-size='20' fill='%2300ffcc' font-family='monospace'>D-NOT</text><circle cx='30' cy='82' r='8' fill='%233a6a9a'/><circle cx='70' cy='82' r='8' fill='%23cc3322'/></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
