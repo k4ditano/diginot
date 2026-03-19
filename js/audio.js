@@ -191,6 +191,65 @@ export const SFX = {
   },
 };
 
-export function setMuted(m) { muted = m; }
+export function setMuted(m) {
+  muted = m;
+  if (m) stopMusic();
+}
 export function isMuted() { return muted; }
 export function initAudio() { ensureAudio(); }
+
+// ═══════════════════════════════════════════
+// V3 — Background Music System
+// ═══════════════════════════════════════════
+let musicInterval = null;
+let currentTrack = null;
+
+const TRACKS = {
+  home: { bpm: 100, notes: [
+    [262,0.15],[0,0.1],[330,0.15],[0,0.1],[392,0.15],[0,0.1],[330,0.15],[0,0.3],
+    [262,0.15],[0,0.1],[294,0.15],[0,0.1],[349,0.15],[0,0.1],[294,0.15],[0,0.3],
+  ]},
+  battle: { bpm: 160, notes: [
+    [392,0.1],[0,0.05],[392,0.1],[0,0.05],[494,0.1],[0,0.05],[392,0.15],[0,0.1],
+    [330,0.1],[0,0.05],[349,0.1],[0,0.05],[392,0.2],[0,0.15],
+    [294,0.1],[0,0.05],[330,0.1],[0,0.05],[392,0.1],[0,0.05],[494,0.15],[0,0.1],
+    [440,0.1],[0,0.05],[392,0.1],[0,0.05],[349,0.2],[0,0.15],
+  ]},
+  explore: { bpm: 120, notes: [
+    [220,0.2],[0,0.1],[262,0.2],[0,0.1],[330,0.2],[0,0.1],[262,0.15],[0,0.15],
+    [247,0.2],[0,0.1],[294,0.2],[0,0.1],[349,0.2],[0,0.1],[294,0.15],[0,0.3],
+  ]},
+  menu: { bpm: 90, notes: [
+    [330,0.3],[0,0.2],[392,0.3],[0,0.2],[440,0.2],[0,0.1],[392,0.2],[0,0.4],
+  ]},
+};
+
+export function playMusic(trackName) {
+  if (muted) return;
+  if (currentTrack === trackName && musicInterval) return; // already playing
+  stopMusic();
+  currentTrack = trackName;
+  const track = TRACKS[trackName];
+  if (!track) return;
+
+  let noteIdx = 0;
+  const playNext = () => {
+    if (muted || currentTrack !== trackName) { stopMusic(); return; }
+    const [freq, dur] = track.notes[noteIdx % track.notes.length];
+    if (freq > 0) {
+      playTone(freq, dur * 0.9, 'triangle', 0.08);
+    }
+    noteIdx++;
+  };
+
+  const msPerBeat = 60000 / track.bpm / 2;
+  playNext();
+  musicInterval = setInterval(playNext, msPerBeat);
+}
+
+export function stopMusic() {
+  if (musicInterval) { clearInterval(musicInterval); musicInterval = null; }
+  currentTrack = null;
+}
+
+export function getCurrentTrack() { return currentTrack; }

@@ -5,16 +5,18 @@
 import {
   TYPES, STAGES, STAGE_LABELS, ZONES, FOODS, ITEMS, STARTERS,
   xpForLevel, generateName, randomDNA, getTypeForDNA,
-  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType
+  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType,
+  MOVES, MATERIALS, RECIPES
 } from './data.js';
 import { renderCreatureSprite, renderCreatureBlinkSprite } from './pixel.js';
-import { SFX, initAudio, setMuted, isMuted } from './audio.js';
+import { SFX, initAudio, setMuted, isMuted, playMusic, stopMusic, getCurrentTrack } from './audio.js';
 import {
-  Creature, GameState, BattleEngine,
-  generateWildCreature, getAvailableZones, rollEncounter, getTrainingReward,
-  generateBoss, performFusion, checkAchievements, checkDailyLogin, claimDailyReward,
-  exportTeamCode, importTeamCode, simulatePvPBattle
+  BattleEngine, generateWildCreature, generateBoss, performFusion,
+  checkAchievements, checkDailyLogin, simulatePvPBattle,
+  exportTeamCode, importTeamCode,
+  addMaterials, canCraft, craftItem, checkMoveLearning
 } from './game.js';
+import { Creature, GameState, BattleEngine, generateWildCreature, getAvailableZones, rollEncounter, getTrainingReward, generateBoss, performFusion, checkAchievements, checkDailyLogin, claimDailyReward, exportTeamCode, importTeamCode, simulatePvPBattle, addMaterials, canCraft, craftItem, checkMoveLearning } from './game.js';
 
 // ─── State ───
 let game = new GameState();
@@ -23,8 +25,8 @@ let screenStack = [];
 let menuIdx = 0;
 let subIdx = 0;
 let battle = null;
-let battleState = 'choose'; // choose, animating, result
-let battleMoveIdx = 0;
+let battleState = 'choose'; // choose, playerAttack, enemyAttack, result
+let battleActionIdx = 0; // 0-3 = moves, 4 = trap, 5 = swap, 6 = run
 let exploreZone = null;
 let exploreSteps = 0;
 let idleFrame = 0;
@@ -48,6 +50,8 @@ let pvpMode = null;
 let pvpResult = null;
 let dailyReward = null;
 let storageIdx = 0;
+let swapMode = null; // null | 'team' | 'battle'
+let swapIdx = 0;
 let achievementPage = 0;
 let pendingAchievements = [];
 let battleSwapMode = false;
@@ -63,6 +67,8 @@ const MENU_ITEMS = [
   { id: 'feed',        icon: '🍖', label: 'Feed' },
   { id: 'notdex',      icon: '📖', label: 'NotDex' },
   { id: 'shop',        icon: '🛒', label: 'Shop' },
+  { id: 'crafting',    icon: '⚒️', label: 'Craft' },
+  { id: 'materials',   icon: '📦', label: 'Items' },
   { id: 'achievements',icon: '🏆', label: 'Achieve' },
   { id: 'pvp',         icon: '⚔️', label: 'PvP' },
   { id: 'storage',     icon: '📦', label: 'Storage' },
@@ -115,9 +121,16 @@ function dismissMessage() {
 
 function creatureImg(creature, size = 4, className = '') {
   const src = isBlinking && creature === game.active
-    ? renderCreatureBlinkSprite(creature.dna, creature.type, creature.stage, size)
-    : renderCreatureSprite(creature.dna, creature.type, creature.stage, size);
+    ? renderCreatureBlinkSprite(creature.dna, creature.type, creature.stage, size, creature.isShiny)
+    : renderCreatureSprite(creature.dna, creature.type, creature.stage, size, creature.isShiny);
   return `<img src="${src}" class="creature-sprite ${className}" alt="${creature.displayName}" draggable="false">`;
+}
+
+function shakeSprite(selector) {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  el.classList.add('shake');
+  setTimeout(() => el.classList.remove('shake'), 400);
 }
 
 function hpBar(hp, maxHp) {
@@ -177,8 +190,9 @@ function renderHome() {
   return `
     <div class="screen-home">
       <div class="home-header">
-        <span class="creature-name">${c.typeIcon} ${c.displayName}</span>
+        <span class="creature-name">${c.isShiny ? '✨ ' : ''}${c.typeIcon} ${c.displayName}</span>
         <span class="creature-level">Lv.${c.level}</span>
+        ${c.isShiny ? '<span class="shiny-badge">✨ SHINY</span>' : ''}
       </div>
       <div class="home-creature ${idleFrame === 1 ? 'bounce' : ''}">
         ${creatureImg(c, 5, 'idle-sprite')}
@@ -189,10 +203,14 @@ function renderHome() {
         <div class="bar-row"><span class="bar-label">😊</span><div class="stat-bar"><div class="stat-fill happy" style="width:${c.happiness}%"></div></div></div>
         <div class="bar-row"><span class="bar-label">🍖</span><div class="stat-bar"><div class="stat-fill hunger" style="width:${c.hunger}%"></div></div></div>
       </div>
+      <div class="home-quick-actions">
+        <button class="quick-btn heal-btn" id="heal-btn">💊 Heal</button>
+        ${game.materials?.notEssence ? `<button class="quick-btn boost-btn" id="boost-btn">✨ Boost XP</button>` : ''}
+      </div>
       <div class="home-footer">
         <span>🪙 ${game.coins}</span>
-        <span>${STAGE_LABELS[c.stage]}</span>
-        <span>📡 ${game.notdex.size} found</span>
+        <span>📦 ${Object.values(game.materials || {}).reduce((a, b) => a + b, 0)} mats</span>
+        <span>✨ ${game.totalShiny || 0} shinies</span>
       </div>
       <div class="hint">A = Menu</div>
     </div>`;
@@ -320,61 +338,77 @@ function renderBattle() {
   if (!battle) return '<div class="empty">No battle!</div>';
   const p = battle.player;
   const e = battle.enemy;
+  const moves = p.moves;
+  const isAnimating = battleState === 'playerAttack' || battleState === 'enemyAttack';
+  const isPlayerTurn = battleState === 'choose';
 
-  let actionArea = '';
-  if (battleState === 'choose') {
-    const moves = p.moves;
-    actionArea = `
-      <div class="battle-actions">
-        <div class="battle-moves">
-          ${moves.map((m, i) => `
-            <button class="move-btn ${battleMoveIdx === i ? 'selected' : ''}" data-idx="${i}">
-              <span class="move-type-dot" style="background:${TYPES[m.type]?.color || '#888'}"></span>
-              ${m.name}
-              <small>${m.power || '—'}</small>
-            </button>
-          `).join('')}
-        </div>
-        <div class="battle-extra-actions">
-          <button class="trap-btn" data-action="catch">📡 Trap (${game.items.dataTrap || 0})</button>
-          ${game.team.filter(c => c.isAlive && c !== battle.player).length > 0 ? '<button class="swap-btn" data-action="swap">🔄 Swap</button>' : ''}
-          <button class="run-btn" data-action="run">🏃 Run</button>
-        </div>
-      </div>`;
-  } else if (battleState === 'result') {
-    const isWin = battle.winner === 'player' || battle.winner === 'capture';
-    actionArea = `<div class="battle-result ${isWin ? 'win' : 'lose'}">${
-      battle.winner === 'capture' ? `📡 ${e.displayName} captured!` :
-      battle.winner === 'player' ? `🏆 Victory!` : `💀 Defeated...`
-    }</div><div class="hint">A = Continue</div>`;
-  }
+  // Unified action list: 4 moves + trap + swap + run
+  const allActions = [
+    ...moves.map((m, i) => ({ type: 'move', idx: i, label: m.name, sub: `PWR ${m.power || '—'} • ${m.type.toUpperCase()}`, typeColor: TYPES[m.type]?.color || '#888' })),
+    { type: 'trap', idx: 4, label: `📡 Trap`, sub: `x${game.items.dataTrap || 0}`, typeColor: '#9b59b6' },
+    { type: 'swap', idx: 5, label: `🔄 Swap`, sub: `${game.team.filter(c => c.isAlive && c !== battle.player).length} available`, typeColor: '#3498db' },
+    { type: 'run',  idx: 6, label: `🏃 Run`,  sub: `${e._isBoss ? '❌ Can't' : 'Escape!'}`, typeColor: '#e74c3c' },
+  ];
+
+  // Battle log: last 6 messages with turn markers
+  const logMsgs = battle.log.slice(-6);
+  const logHTML = logMsgs.map((line, i) => {
+    const isLast = i === logMsgs.length - 1;
+    const isPlayer = line.includes('→');
+    return `<div class="log-line ${isLast ? 'log-last' : ''} ${isPlayer ? 'log-player' : 'log-enemy'}">${line}</div>`;
+  }).join('');
+
+  // Turn indicator
+  const turnLabel = battleState === 'playerAttack' ? '⚔️ ATTACKING...' :
+                    battleState === 'enemyAttack' ? '👹 ENEMY...' :
+                    battleState === 'result' ? (battle.winner === 'capture' || battle.winner === 'player' ? '🏆 VICTORY!' : '💀 DEFEAT!') : 'YOUR TURN';
+
+  const resultHTML = battleState === 'result' ? `
+    <div class="battle-result-overlay ${battle.winner === 'capture' || battle.winner === 'player' ? 'win' : 'lose'}">
+      ${battle.winner === 'capture' ? `📡 ${e.displayName} captured!` :
+        battle.winner === 'player' ? `🏆 Victory! +${battle.xpReward || 0} XP` :
+        battle.winner === 'run' ? `🏃 Got away!` : `💀 ${p.displayName} was defeated...`}
+    </div>` : '';
 
   return `
     <div class="screen-battle">
+      ${resultHTML}
       <div class="battle-field">
         <div class="battle-enemy">
           <div class="battle-info-enemy">
-            <span>${e.typeIcon} ${e.displayName} Lv.${e.level}</span>
+            <span>${e.isShiny ? '✨ ' : ''}${e.typeIcon} ${e.displayName} Lv.${e.level}</span>
             ${hpBar(e.stats.hp, e.stats.maxHp)}
-            ${e.status ? `<span class="status-badge">${e.status}</span>` : ''}
+            ${e.status ? `<span class="status-badge status-${e.status}">${e.status}</span>` : ''}
           </div>
-          <div class="battle-sprite enemy-sprite">
-            <img src="${renderCreatureSprite(e.dna, e.type, e.stage, 4)}" draggable="false">
+          <div class="battle-sprite enemy-sprite ${battleState === 'playerAttack' ? 'attacking' : ''} ${!e.isAlive ? 'fainted' : ''}">
+            <img src="${renderCreatureSprite(e.dna, e.type, e.stage, 4, e.isShiny)}" draggable="false">
           </div>
         </div>
         <div class="battle-player">
-          <div class="battle-sprite player-sprite">
-            <img src="${renderCreatureSprite(p.dna, p.type, p.stage, 4)}" draggable="false">
+          <div class="battle-sprite player-sprite ${battleState === 'enemyAttack' ? 'attacking' : ''} ${!p.isAlive ? 'fainted' : ''}">
+            <img src="${renderCreatureSprite(p.dna, p.type, p.stage, 4, p.isShiny)}" draggable="false">
           </div>
           <div class="battle-info-player">
-            <span>${p.typeIcon} ${p.displayName} Lv.${p.level}</span>
+            <span>${p.isShiny ? '✨ ' : ''}${p.typeIcon} ${p.displayName} Lv.${p.level}</span>
             ${hpBar(p.stats.hp, p.stats.maxHp)}
-            ${p.status ? `<span class="status-badge">${p.status}</span>` : ''}
+            ${p.status ? `<span class="status-badge status-${p.status}">${p.status}</span>` : ''}
           </div>
         </div>
       </div>
-      <div class="battle-log">${battle.log.slice(-2).join('<br>')}</div>
-      ${actionArea}
+      <div class="battle-log-container">
+        <div class="battle-log">${logHTML}</div>
+      </div>
+      <div class="turn-indicator ${isPlayerTurn ? 'your-turn' : 'enemy-turn'}">${turnLabel}</div>
+      ${isPlayerTurn ? `
+      <div class="battle-actions">
+        ${allActions.map(a => `
+          <button class="battle-action-btn ${battleActionIdx === a.idx ? 'selected' : ''}" data-idx="${a.idx}">
+            <span class="action-dot" style="background:${a.typeColor}"></span>
+            <span class="action-label">${a.label}</span>
+            <span class="action-sub">${a.sub}</span>
+          </button>`).join('')}
+      </div>
+      ` : `<div class="battle-actions-disabled"><span class="hint">...</span></div>`}
     </div>`;
 }
 
@@ -777,6 +811,11 @@ function render() {
     case 'storage': html = renderStorage(); break;
     case 'pvp': html = renderPvP(); break;
     case 'daily': html = renderDaily(); break;
+    // V3 screens
+    case 'crafting': html = renderCrafting(); break;
+    case 'materials': html = renderMaterials(); break;
+    case 'swapBattle': html = renderSwapBattle(); break;
+    case 'moveLearn': html = renderMoveLearn(); break;
   }
 
   content.innerHTML = html;
@@ -784,9 +823,30 @@ function render() {
   // Post-render hooks
   if (currentScreen === 'connect') {
     const receiveBtn = document.getElementById('receive-btn');
-    if (receiveBtn) {
-      receiveBtn.addEventListener('click', handleReceive);
-    }
+    if (receiveBtn) receiveBtn.addEventListener('click', handleReceive);
+  }
+  if (currentScreen === 'home') {
+    const healBtn = document.getElementById('heal-btn');
+    if (healBtn) healBtn.addEventListener('click', () => {
+      if (game.active) { game.active.fullHeal(); SFX.heal(); game.save(); render(); showMessage(`💊 ${game.active.displayName} fully healed!`); }
+    });
+    const boostBtn = document.getElementById('boost-btn');
+    if (boostBtn) boostBtn.addEventListener('click', () => {
+      if (game.materials?.notEssence && game.active) {
+        game.active.addXP(500);
+        game.materials.notEssence--;
+        SFX.levelUp(); game.save(); render();
+        showMessage(`✨ +500 XP to ${game.active.displayName}!`);
+      }
+    });
+    // Start home music
+    if (!getCurrentTrack() || getCurrentTrack() !== 'home') playMusic('home');
+  }
+  if (currentScreen === 'menu') {
+    if (!getCurrentTrack() || getCurrentTrack() !== 'menu') playMusic('menu');
+  }
+  if (currentScreen === 'exploring') {
+    if (!getCurrentTrack() || getCurrentTrack() !== 'explore') playMusic('explore');
   }
 }
 
@@ -822,6 +882,11 @@ function handleInput(btn) {
     case 'storage': handleStorageInput(btn); break;
     case 'pvp': handlePvPInput(btn); break;
     case 'daily': handleDailyInput(btn); break;
+    // V3 screens
+    case 'crafting': handleCraftingInput(btn); break;
+    case 'materials': handleMaterialsInput(btn); break;
+    case 'swapBattle': handleSwapBattleInput(btn); break;
+    case 'moveLearn': handleMoveLearnInput(btn); break;
   }
 }
 
@@ -968,58 +1033,119 @@ function handleExploringInput(btn) {
 function startBattle(enemy) {
   battle = new BattleEngine(game.active, enemy);
   battleState = 'choose';
-  battleMoveIdx = 0;
+  battleActionIdx = 0;
   game.totalBattles++;
+  playMusic('battle');
   setScreen('battle');
 }
 
 function handleBattleInput(btn) {
+  const moves = battle.player.moves;
+  const maxIdx = 3 + (moves.length > 4 ? 1 : 0) + (game.team.filter(c => c.isAlive && c !== battle.player).length > 0 ? 1 : 0) + 1;
+
   if (battleState === 'choose') {
-    const moves = battle.player.moves;
-    if (btn === 'up') { battleMoveIdx = Math.max(0, battleMoveIdx - 1); SFX.menuMove(); }
-    else if (btn === 'down') { battleMoveIdx = Math.min(moves.length - 1, battleMoveIdx + 1); SFX.menuMove(); }
-    else if (btn === 'left') { battleMoveIdx = Math.max(0, battleMoveIdx - 1); SFX.menuMove(); }
-    else if (btn === 'right') { battleMoveIdx = Math.min(moves.length - 1, battleMoveIdx + 1); SFX.menuMove(); }
+    if (btn === 'up') {
+      if (battleActionIdx >= 4) battleActionIdx = battleActionIdx === 4 ? moves.length - 1 : 4;
+      else battleActionIdx = Math.max(0, battleActionIdx - 1);
+      SFX.menuMove();
+    }
+    else if (btn === 'down') {
+      if (battleActionIdx < 4) battleActionIdx = Math.min(moves.length - 1, battleActionIdx + 1);
+      else battleActionIdx++;
+      SFX.menuMove();
+    }
+    else if (btn === 'left' || btn === 'right') {
+      SFX.menuMove();
+    }
     else if (btn === 'a') {
-      // Check if touch hit catch or run button
-      const move = moves[battleMoveIdx];
-      SFX.attack();
-      battleState = 'animating';
-      render();
+      SFX.menuSelect();
+      const action = battleActionIdx;
 
-      // Show attack animation
-      const playerSprite = document.querySelector('.player-sprite');
-      if (playerSprite) playerSprite.classList.add('attack');
+      if (action < moves.length) {
+        // ATTACK
+        battleState = 'playerAttack';
+        render();
+        playMusic('battle');
 
-      setTimeout(() => {
-        if (playerSprite) playerSprite.classList.remove('attack');
-        const results = battle.executeTurn(move.id);
-
-        // Animate hits
-        results.forEach((r, i) => {
-          setTimeout(() => {
-            if (r.damage > 0) {
-              SFX.hit();
-              const target = r.isPlayer ? '.enemy-sprite' : '.player-sprite';
-              const el = document.querySelector(target);
-              if (el) {
-                el.classList.add('hit');
-                setTimeout(() => el.classList.remove('hit'), 400);
-              }
-            }
-          }, i * 400);
-        });
-
+        // Player attacks
         setTimeout(() => {
-          if (battle.finished) {
-            battleState = 'result';
-            handleBattleEnd();
+          const result = battle.executePlayerMove(moves[action].id);
+          render();
+          if (result?.damage > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
+          playTone(300 + result.damage * 2, 0.15, 'square', 0.1);
+
+          if (result.fainted || battle.finished) {
+            setTimeout(() => {
+              battleState = 'result';
+              handleBattleEnd();
+              render();
+            }, 800);
           } else {
-            battleState = 'choose';
+            // ENEMY TURN
+            battleState = 'enemyAttack';
+            render();
+            setTimeout(() => {
+              const enemyMove = battle.getAIMove();
+              const aiResult = battle.executeEnemyMove(enemyMove.id);
+              render();
+              if (aiResult?.damage > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
+              playTone(200 + aiResult.damage * 1.5, 0.15, 'sawtooth', 0.1);
+
+              setTimeout(() => {
+                if (aiResult.fainted || battle.finished) {
+                  battleState = 'result';
+                  handleBattleEnd();
+                } else {
+                  battleState = 'choose';
+                }
+                render();
+              }, 700);
+            }, 600);
+          }
+        }, 300);
+
+      } else if (action === moves.length) {
+        // TRAP
+        battleState = 'playerAttack';
+        render();
+        setTimeout(() => {
+          const trapType = game.items.shinyTrap ? 'shinyTrap' : game.items.ultraTrap ? 'ultraTrap' : game.items.superTrap ? 'superTrap' : 'dataTrap';
+          const rate = trapType === 'ultraTrap' ? 0.7 : trapType === 'superTrap' ? 0.5 : trapType === 'shinyTrap' ? 0.8 : 0.35;
+          const caught = Math.random() < rate;
+          battle.log.push(`📡 Used ${trapType}!`);
+          if (caught) {
+            battle.winner = 'capture';
+            battle.finished = true;
+          } else {
+            battle.log.push(`${battle.enemy.displayName} broke free!`);
           }
           render();
-        }, results.length * 400 + 200);
-      }, 400);
+          setTimeout(() => {
+            if (battle.finished) { battleState = 'result'; handleBattleEnd(); }
+            else { battleState = 'choose'; }
+            render();
+          }, 800);
+        }, 300);
+
+      } else if (action === moves.length + 1) {
+        // SWAP — show team
+        swapMode = true; swapIdx = 0;
+        battleState = 'choose'; // reset but we switch screens
+        setScreen('swapBattle');
+        return;
+
+      } else {
+        // RUN
+        if (battle.enemy._isBoss) {
+          battle.log.push(`❌ Can't run from a Boss!`);
+          render();
+        } else {
+          battle.winner = 'run'; battle.finished = true; battleState = 'result';
+          battle.log.push(`🏃 Got away safely!`);
+          render();
+          setTimeout(() => { handleBattleEnd(); render(); }, 500);
+        }
+      }
     }
     render();
   } else if (battleState === 'result') {
@@ -1027,10 +1153,8 @@ function handleBattleInput(btn) {
       SFX.menuSelect();
       battle = null;
       game.save();
-      if (currentScreen === 'battle') {
-        setScreen('home');
-        screenStack = [];
-      }
+      playMusic('home');
+      if (currentScreen === 'battle') { setScreen('home'); screenStack = []; }
     }
   }
 }
@@ -1038,12 +1162,29 @@ function handleBattleInput(btn) {
 function handleBattleEnd() {
   if (battle.winner === 'player') {
     const enemy = battle.enemy;
-    const xpGain = 15 + enemy.level * 5;
+    const xpBoost = (game.xpBoosterBattles || 0) > 0;
+    const baseXP = 15 + enemy.level * 5;
+    const xpGain = xpBoost ? Math.floor(baseXP * 1.5) : baseXP;
     const coinGain = 5 + enemy.level * 2;
+    if (xpBoost) game.xpBoosterBattles--;
+
     const leveled = game.active.addXP(xpGain);
     game.coins += coinGain;
     game.active.wins++;
     game.active.happiness = Math.min(100, game.active.happiness + 5);
+
+    // V3: Material drops
+    const drops = rollMaterialDrop(enemy, !!enemy._isBoss);
+    if (drops.length) {
+      addMaterials(game, drops);
+      battle.log.push(`🎁 Drops: ${drops.map(d => MATERIALS[d]?.icon || '📦').join(' ')}`);
+    }
+
+    // V3: Shiny counter
+    if (enemy.isShiny) {
+      game.totalShiny = (game.totalShiny || 0) + 1;
+      battle.log.push(`✨ SHINY! (${game.totalShiny} total)`);
+    }
 
     // V2: Boss reward
     if (enemy._isBoss && enemy._zoneId) {
@@ -1054,42 +1195,56 @@ function handleBattleEnd() {
         const bossData = BOSSES[enemy._zoneId];
         if (bossData?.reward) {
           game.coins += bossData.reward.coins;
-          if (bossData.reward.item) {
-            game.items[bossData.reward.item] = (game.items[bossData.reward.item] || 0) + 1;
-          }
+          if (bossData.reward.item) game.items[bossData.reward.item] = (game.items[bossData.reward.item] || 0) + 1;
+          const bossDrops = rollMaterialDrop(enemy, true);
+          addMaterials(game, bossDrops);
           setTimeout(() => {
-            showMessage(`👑 BOSS DEFEATED!\n+${bossData.reward.coins} 🪙\n+1 ${ITEMS[bossData.reward.item]?.name || ''}!`);
+            showMessage(`👑 BOSS DEFEATED!\n+${bossData.reward.coins} 🪙\n+1 ${ITEMS[bossData.reward.item]?.name || ''}\n🎁 ${bossDrops.map(d => MATERIALS[d]?.icon).join(' ')}`);
           }, 800);
         }
       }
     }
 
+    // V3: Check move learning
+    const newMoves = checkMoveLearning(game.active);
+    if (newMoves.length) {
+      const msg = `📚 ${game.active.displayName} learned: ${newMoves.map(m => MOVES[m]?.name).join(', ')}!\nKeep or forget an old move?`;
+      showMessage(msg, () => {
+        showMoveLearnScreen(game.active, newMoves);
+      });
+    }
+
     SFX.victory();
+    const xpMsg = xpBoost ? `+${xpGain} XP (BOOSTED!)` : `+${xpGain} XP`;
     setTimeout(() => {
-      showMessage(`+${xpGain} XP, +${coinGain} 🪙!`);
+      showMessage(`${xpMsg}, +${coinGain} 🪙!`);
       if (leveled) {
         SFX.levelUp();
         showMessage(`${game.active.displayName} leveled up to Lv.${game.active.level}!`);
-        if (game.active.canEvolve) {
-          showMessage(`${game.active.displayName} is ready to evolve! Check Status!`);
-        }
+        if (game.active.canEvolve) showMessage(`${game.active.displayName} is ready to evolve!`);
       }
       checkAndNotifyAchievements();
     }, 500);
   } else if (battle.winner === 'capture') {
     const enemy = battle.enemy;
     enemy.fullHeal();
+    if (enemy.isShiny) { game.totalShiny = (game.totalShiny || 0) + 1; }
     if (game.addToTeam(enemy)) {
-      showMessage(`${enemy.displayName} joined your team!`);
+      showMessage(enemy.isShiny ? `✨ SHINY ${enemy.displayName} captured!` : `${enemy.displayName} joined your team!`);
     } else {
       game.addToStorage(enemy);
-      showMessage(`Team full! ${enemy.displayName} sent to storage.`);
+      showMessage(`${enemy.displayName} sent to storage!`);
     }
     SFX.capture();
   } else {
     game.active.losses++;
     game.active.happiness = Math.max(0, game.active.happiness - 10);
     SFX.defeat();
+    // Check if player has other alive Nots to swap in
+    const aliveOthers = game.team.filter(c => c.isAlive && c !== game.active);
+    if (aliveOthers.length === 0) {
+      battle.log.push(`💀 All Nots down!`);
+    }
   }
 }
 
@@ -1097,96 +1252,12 @@ function handleBattleEnd() {
 document.addEventListener('click', (e) => {
   if (currentScreen !== 'battle' || battleState !== 'choose') return;
 
-  const trapBtn = e.target.closest('.trap-btn');
-  const runBtn = e.target.closest('.run-btn');
-
-  if (trapBtn) {
+  const actionBtn = e.target.closest('.battle-action-btn[data-idx]');
+  if (actionBtn) {
     e.preventDefault();
-    if ((game.items.dataTrap || 0) <= 0) {
-      SFX.error();
-      showMessage('No Data Traps left!');
-      return;
-    }
-    game.items.dataTrap--;
-    SFX.attack();
-    battleState = 'animating';
+    battleActionIdx = parseInt(actionBtn.dataset.idx);
     render();
-
-    setTimeout(() => {
-      const caught = battle.attemptCapture('dataTrap');
-      if (caught) {
-        battleState = 'result';
-        handleBattleEnd();
-      } else {
-        SFX.captureFail();
-        // Enemy attacks
-        const enemyMove = battle.getAIMove();
-        battle.executeMove(battle.enemy, battle.player, enemyMove);
-        if (!battle.player.isAlive) {
-          battle.finished = true;
-          battle.winner = 'enemy';
-          battleState = 'result';
-          handleBattleEnd();
-        } else {
-          battleState = 'choose';
-        }
-      }
-      render();
-    }, 800);
-  }
-
-  if (runBtn) {
-    e.preventDefault();
-    if (Math.random() < 0.6) {
-      SFX.menuBack();
-      showMessage('Got away safely!', () => {
-        battle = null;
-        game.save();
-        setScreen('exploring');
-      });
-    } else {
-      SFX.error();
-      showMessage("Couldn't escape!", () => {
-        // Enemy gets a free attack
-        const enemyMove = battle.getAIMove();
-        battle.executeMove(battle.enemy, battle.player, enemyMove);
-        if (!battle.player.isAlive) {
-          battle.finished = true;
-          battle.winner = 'enemy';
-          battleState = 'result';
-          handleBattleEnd();
-        }
-        render();
-      });
-    }
-  }
-
-  // V2: Team swap in battle
-  const swapBtn = e.target.closest('.swap-btn');
-  if (swapBtn) {
-    e.preventDefault();
-    const alive = game.team.filter((c, i) => c.isAlive && i !== game.activeIdx);
-    if (alive.length === 0) { SFX.error(); return; }
-    // Cycle to next alive team member
-    let nextIdx = (game.activeIdx + 1) % game.team.length;
-    while (!game.team[nextIdx].isAlive || nextIdx === game.activeIdx) {
-      nextIdx = (nextIdx + 1) % game.team.length;
-    }
-    game.activeIdx = nextIdx;
-    battle.player = game.active;
-    SFX.swap();
-    showMessage(`Go, ${game.active.displayName}!`, () => {
-      // Enemy gets a free attack on swap
-      const enemyMove = battle.getAIMove();
-      battle.executeMove(battle.enemy, battle.player, enemyMove);
-      if (!battle.player.isAlive) {
-        battle.finished = true;
-        battle.winner = 'enemy';
-        battleState = 'result';
-        handleBattleEnd();
-      }
-      render();
-    });
+    handleBattleInput('a');
   }
 });
 
@@ -2060,9 +2131,10 @@ function bindControls() {
       render();
       return;
     }
-    const moveBtn = e.target.closest('.move-btn[data-idx]');
-    if (moveBtn && currentScreen === 'battle' && battleState === 'choose') {
-      battleMoveIdx = parseInt(moveBtn.dataset.idx);
+    const actionBtn = e.target.closest('.battle-action-btn[data-idx]');
+    if (actionBtn && currentScreen === 'battle' && battleState === 'choose') {
+      battleActionIdx = parseInt(actionBtn.dataset.idx);
+      render();
       handleInput('a');
       return;
     }
@@ -2109,4 +2181,239 @@ export function init() {
     if (now - lastTap < 300) e.preventDefault();
     lastTap = now;
   }, { passive: false });
+}
+
+// ═══════════════════════════════════════════
+// V3 — NEW SCREENS
+// ═══════════════════════════════════════════
+
+// ─── Materials Screen ───
+let materialsPage = 0;
+
+function renderMaterials() {
+  const mats = game.materials || {};
+  const entries = Object.entries(mats).filter(([, qty]) => qty > 0);
+  const perPage = 6;
+  const page = entries.slice(materialsPage * perPage, (materialsPage + 1) * perPage);
+  const totalPages = Math.max(1, Math.ceil(entries.length / perPage));
+
+  return `
+    <div class="screen-materials">
+      <h2>📦 Items & Materials</h2>
+      <div class="mats-grid">
+        ${entries.length === 0 ? '<p class="empty-hint">No materials yet! Battle to collect.</p>' : ''}
+        ${page.map(([key, qty], i) => {
+          const info = MATERIALS[key] || ITEMS[key] || {};
+          const isItem = !!ITEMS[key];
+          return `<div class="mat-card ${subIdx === i ? 'selected' : ''}" data-key="${key}">
+            <span class="mat-icon">${info.icon || '📦'}</span>
+            <span class="mat-name">${info.name || key}</span>
+            <span class="mat-qty">x${qty}</span>
+            <span class="mat-desc">${info.desc || ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      ${entries.length > perPage ? `<div class="page-hint">▲▼ Page ${materialsPage + 1}/${totalPages}</div>` : ''}
+      <div class="hint">A = Use • B = Back</div>
+    </div>`;
+}
+
+function handleMaterialsInput(btn) {
+  const mats = Object.entries(game.materials || {}).filter(([, qty]) => qty > 0);
+  const perPage = 6;
+  if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { subIdx = Math.min(mats.length - 1, subIdx + 1); SFX.menuMove(); }
+  else if (btn === 'left') { materialsPage = Math.max(0, materialsPage - 1); subIdx = 0; SFX.menuMove(); }
+  else if (btn === 'right') { materialsPage++; subIdx = 0; SFX.menuMove(); }
+  else if (btn === 'a') {
+    const [key] = mats[subIdx] || [];
+    if (key === 'notEssence') {
+      // Instantly boost XP of active Not
+      game.active.addXP(500);
+      game.materials[key]--;
+      SFX.levelUp();
+      showMessage(`✨ +500 XP to ${game.active.displayName}!`);
+    }
+  }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+// ─── Crafting Screen ───
+let craftingIdx = 0;
+
+function renderCrafting() {
+  const recipes = Object.entries(RECIPES);
+  return `
+    <div class="screen-crafting">
+      <h2>⚒️ Crafting</h2>
+      <div class="craft-list">
+        ${recipes.map(([id, r], i) => {
+          const can = canCraft(game, id);
+          return `<div class="craft-card ${craftingIdx === i ? 'selected' : ''} ${can ? 'can-craft' : 'cannot'}">
+            <span class="craft-icon">${r.icon || '📦'}</span>
+            <div class="craft-info">
+              <span class="craft-name">${r.name}</span>
+              <span class="craft-desc">${r.desc || ''}</span>
+              <span class="craft-cost">${Object.entries(r.materials).map(([m, q]) => {
+                const info = MATERIALS[m] || {};
+                const has = game.materials?.[m] || 0;
+                return `${info.icon || m} ${has}/${q}`;
+              }).join(' · ')}</span>
+            </div>
+            <span class="craft-status">${can ? '✅' : '🔒'}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="hint">A = Craft • B = Back</div>
+    </div>`;
+}
+
+function handleCraftingInput(btn) {
+  const recipes = Object.entries(RECIPES);
+  if (btn === 'up') { craftingIdx = Math.max(0, craftingIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { craftingIdx = Math.min(recipes.length - 1, craftingIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const [id] = recipes[craftingIdx] || [];
+    if (id && craftItem(game, id)) {
+      SFX.capture();
+      const r = RECIPES[id];
+      showMessage(`⚒️ Crafted: ${r.icon} ${r.name}!`);
+      render();
+    } else {
+      SFX.menuBack();
+      showMessage(`❌ Not enough materials!`);
+    }
+  }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+// ─── Swap Battle Screen ───
+function renderSwapBattle() {
+  const others = game.team.filter(c => c.isAlive && c !== battle.player);
+  return `
+    <div class="screen-swap-battle">
+      <h2>🔄 Swap Not</h2>
+      <p class="hint-sm">Choose a Not to send into battle:</p>
+      <div class="team-list">
+        ${others.map((c, i) => `
+          <div class="team-card ${swapIdx === i ? 'selected' : ''}" data-idx="${i}">
+            ${creatureImg(c, 3)}
+            <div class="team-info">
+              <span>${c.isShiny ? '✨ ' : ''}${c.displayName} Lv.${c.level}</span>
+              ${hpBar(c.stats.hp, c.stats.maxHp)}
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="hint">A = Send In • B = Cancel</div>
+    </div>`;
+}
+
+function handleSwapBattleInput(btn) {
+  const others = game.team.filter(c => c.isAlive && c !== battle.player);
+  if (btn === 'up') { swapIdx = Math.max(0, swapIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { swapIdx = Math.min(others.length - 1, swapIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const newActive = others[swapIdx];
+    if (newActive) {
+      // Swap in battle
+      const oldPlayer = battle.player;
+      const idx = game.team.indexOf(newActive);
+      const oldIdx = game.team.indexOf(oldPlayer);
+      game.team[idx] = oldPlayer;
+      game.team[oldIdx] = newActive;
+      game.active = newActive;
+      battle.swapPlayer(newActive);
+      battle.log.push(`🔄 Sent in ${newActive.displayName}!`);
+      SFX.menuSelect();
+      battleState = 'choose';
+      battleActionIdx = 0;
+      setScreen('battle');
+    }
+  }
+  else if (btn === 'b') { SFX.menuBack(); setScreen('battle'); }
+  render();
+}
+
+// ─── Move Learning Screen ───
+let learnIdx = 0;
+let pendingLearnCreature = null;
+let pendingLearnMoves = [];
+let learnForgetIdx = -1;
+
+function showMoveLearnScreen(creature, newMoves) {
+  pendingLearnCreature = creature;
+  pendingLearnMoves = newMoves;
+  learnIdx = 0;
+  learnForgetIdx = -1;
+  setScreen('moveLearn');
+}
+
+function renderMoveLearn() {
+  const c = pendingLearnCreature;
+  if (!c) return '<div class="empty">Nothing to learn!</div>';
+  const currentMoves = c.moves;
+  const newMoves = pendingLearnMoves;
+
+  return `
+    <div class="screen-move-learn">
+      <h2>📚 ${c.displayName} Learned New Moves!</h2>
+      <div class="learn-section">
+        <p class="section-title">Choose what to learn:</p>
+        ${newMoves.map((m, i) => {
+          const mv = MOVES[m];
+          return `<div class="learn-move-card ${learnIdx === i ? 'selected' : ''}" data-idx="${i}">
+            <span class="type-dot" style="background:${TYPES[mv.type]?.color || '#888'}"></span>
+            <span class="learn-move-name">${mv.name}</span>
+            <span class="learn-move-stats">PWR ${mv.power || '—'} • ${mv.cat}</span>
+            <span class="learn-move-desc">${mv.effect ? `Effect: ${mv.effect}` : ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="learn-section">
+        <p class="section-title">Current moves (tap one to forget):</p>
+        ${currentMoves.map((m, i) => `
+          <div class="current-move-card ${learnForgetIdx === i ? 'forget' : ''}" data-idx="${i}">
+            <span class="type-dot" style="background:${TYPES[m.type]?.color || '#888'}"></span>
+            <span>${m.name}</span>
+            <span>PWR ${m.power || '—'}</span>
+          </div>`).join('')}
+      </div>
+      <div class="hint">Select move to learn + select old move to forget • A = Confirm • B = Skip</div>
+    </div>`;
+}
+
+function handleMoveLearnInput(btn) {
+  if (btn === 'up') { learnIdx = Math.max(0, learnIdx - 1); learnForgetIdx = -1; SFX.menuMove(); }
+  else if (btn === 'down') { learnIdx = Math.min(pendingLearnMoves.length - 1, learnIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const c = pendingLearnCreature;
+    const newMoveId = pendingLearnMoves[learnIdx];
+    if (!newMoveId) return;
+    if (c.learnedMoves.length < 4) {
+      c.learnMove(newMoveId);
+      SFX.menuSelect();
+      showMessage(`${c.displayName} learned ${MOVES[newMoveId].name}!`);
+      pendingLearnCreature = null; pendingLearnMoves = [];
+      goBack();
+    } else {
+      // Need to forget one
+      const forgetIdx = learnForgetIdx;
+      if (forgetIdx >= 0 && forgetIdx < c.learnedMoves.length) {
+        const oldMove = c.learnedMoves[forgetIdx];
+        c.forgetMove(forgetIdx);
+        c.learnMove(newMoveId);
+        SFX.menuSelect();
+        showMessage(`Forgot ${MOVES[oldMove].name}...\nLearned ${MOVES[newMoveId].name}!`);
+        pendingLearnCreature = null; pendingLearnMoves = [];
+        goBack();
+      } else {
+        showMessage(`Select an old move to forget first!`);
+      }
+    }
+    render();
+  }
+  else if (btn === 'b') { SFX.menuBack(); pendingLearnCreature = null; pendingLearnMoves = []; goBack(); }
+  render();
 }

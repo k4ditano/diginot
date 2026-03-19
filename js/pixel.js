@@ -507,22 +507,37 @@ const TYPE_HUE = {
   spark: [40, 65], void: [260, 310], lux: [30, 55], glitch: [0, 360],
 };
 
-function generatePalette(dna, type) {
+function generatePalette(dna, type, isShinyFlag) {
   const h = hashDNA(dna);
   const [hMin, hMax] = TYPE_HUE[type] || [0, 360];
   const hue = hMin + ((h >> 4) & 0xFF) / 255 * (hMax - hMin);
-  const satVar = ((h >> 12) & 0xF) / 15; // 0-1
+  const satVar = ((h >> 12) & 0xF) / 15;
   const sat = type === 'glitch' ? 80 + satVar * 20 : 55 + satVar * 35;
   const hueShift = ((h >> 16) & 0xF) / 15 * 30 - 15;
 
+  // ── SHINY: completely different hue (shifted by 120-240 deg + saturation boost) ──
+  let shHue = hue;
+  let shSat = sat;
+  let shLight = 55;
+  if (isShinyFlag) {
+    const sh = hashDNA(dna + '_shiny_');
+    shHue = ((h >> 20) & 0xFF) / 255 * 360; // full spectrum
+    shSat = 85 + (((h >> 24) & 0xF) / 15) * 15;
+    shLight = 50 + (((h >> 28) & 0xF) / 15) * 25;
+    // Occasional gold/rainbow tint
+    if ((h & 0xFF) < 20) { shHue = 45; shSat = 95; shLight = 65; } // gold
+  }
+
   return {
-    outline:   hsl(hue, sat * 0.4, 12),
-    shadow:    hsl(hue, sat * 0.7, 22),
-    base:      hsl(hue, sat, 45),
-    highlight: hsl(hue, sat * 0.8, 65),
-    eye:       type === 'void' ? '#ff3333' : type === 'glitch' ? '#ffff00' : '#ffffff',
-    accent:    hsl(hue + hueShift + 40, Math.min(100, sat + 15), 55),
-    mouth:     hsl(hue, sat * 0.5, 18),
+    outline:   hsl(shHue, shSat * 0.4, 15),
+    shadow:    hsl(shHue, shSat * 0.75, 25),
+    base:      hsl(shHue, shSat, shLight),
+    highlight: hsl(shHue, shSat * 0.6, Math.min(90, shLight + 30)),
+    eye:       isShinyFlag ? hsl(shHue + 60, 100, 75) : (type === 'void' ? '#ff3333' : type === 'glitch' ? '#ffff00' : '#ffffff'),
+    accent:    hsl(shHue + hueShift + 40, Math.min(100, shSat + 15), 60),
+    mouth:     hsl(shHue, shSat * 0.5, 18),
+    // Shiny gets extra sparkle color
+    sparkle:   isShinyFlag ? hsl(shHue + 120, 100, 80) : null,
   };
 }
 
@@ -539,13 +554,13 @@ function hsl(h, s, l) {
 
 const spriteCache = new Map();
 
-export function renderCreatureSprite(dna, type, stage, pixelSize = 4) {
-  const cacheKey = `${dna}_${type}_${stage}_${pixelSize}`;
+export function renderCreatureSprite(dna, type, stage, pixelSize = 4, isShinyFlag = false) {
+  const cacheKey = `${dna}_${type}_${stage}_${pixelSize}_${isShinyFlag}`;
   if (spriteCache.has(cacheKey)) return spriteCache.get(cacheKey);
 
   const grid = generateCreatureGrid(dna, type, stage);
   const size = grid.length;
-  const pal = generatePalette(dna, type);
+  const pal = generatePalette(dna, type, isShinyFlag);
 
   const canvas = document.createElement('canvas');
   canvas.width = size * pixelSize;
@@ -566,18 +581,36 @@ export function renderCreatureSprite(dna, type, stage, pixelSize = 4) {
     }
   }
 
+  // Shiny sparkle effect: 5-8 colored dots orbiting the creature
+  if (isShinyFlag && pal.sparkle) {
+    const cx = Math.floor(size / 2) * pixelSize + pixelSize / 2;
+    const cy = Math.floor(size / 2) * pixelSize + pixelSize / 2;
+    const r = size * pixelSize * 0.5;
+    ctx.fillStyle = pal.sparkle;
+    const numSparkles = 6;
+    for (let i = 0; i < numSparkles; i++) {
+      const angle = (i / numSparkles) * Math.PI * 2;
+      const dist = r + Math.sin(i * 1.3) * 2;
+      const sx = cx + Math.cos(angle) * dist;
+      const sy = cy + Math.sin(angle) * dist;
+      ctx.beginPath();
+      ctx.arc(sx, sy, pixelSize * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   const dataURL = canvas.toDataURL();
   spriteCache.set(cacheKey, dataURL);
   return dataURL;
 }
 
-export function renderCreatureBlinkSprite(dna, type, stage, pixelSize = 4) {
-  const cacheKey = `${dna}_${type}_${stage}_${pixelSize}_blink`;
+export function renderCreatureBlinkSprite(dna, type, stage, pixelSize = 4, isShinyFlag = false) {
+  const cacheKey = `${dna}_${type}_${stage}_${pixelSize}_${isShinyFlag}_blink`;
   if (spriteCache.has(cacheKey)) return spriteCache.get(cacheKey);
 
   const grid = generateCreatureGrid(dna, type, stage);
   const size = grid.length;
-  const pal = generatePalette(dna, type);
+  const pal = generatePalette(dna, type, isShinyFlag);
 
   // Eyes → outline for blink
   for (let y = 0; y < size; y++) {

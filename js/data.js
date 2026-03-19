@@ -109,6 +109,55 @@ export const MOVES = {
   // Glitch moves
   overflow:    { name: 'Overflow',    type: 'glitch', power: 77, acc: 77, cat: 'special', effect: 'stun' },
   corrupt:     { name: 'Corrupt',     type: 'glitch', power: 66, acc: 88, cat: 'special', effect: 'poison' },
+  // ═══ V3: Expanded Move Pool ═══
+  // More Ember
+  emberClaw:   { name: 'Ember Claw',  type: 'ember',  power: 40, acc: 100, cat: 'physical', effect: null },
+  magmaShield: { name: 'Magma Shield',type: 'ember',  power: 0,  acc: 100, cat: 'status',   effect: 'defUp' },
+  blazeKick:   { name: 'Blaze Kick',  type: 'ember',  power: 70, acc: 85, cat: 'physical', effect: 'burn' },
+  eruption:    { name: 'Eruption',    type: 'ember',  power: 110,acc: 70, cat: 'special',  effect: 'burn' },
+  smokeScreen: { name: 'Smoke Screen',type: 'ember',  power: 0,  acc: 100, cat: 'status',   effect: 'accDown' },
+  // More Flux
+  whirlpool:   { name: 'Whirlpool',   type: 'flux',   power: 50, acc: 95, cat: 'special',  effect: 'spdDown' },
+  iceBeam:     { name: 'Ice Beam',    type: 'flux',   power: 75, acc: 90, cat: 'special',  effect: 'freeze' },
+  rainDance:   { name: 'Rain Dance',  type: 'flux',   power: 0,  acc: 100, cat: 'status',   effect: 'spAtkUp' },
+  tsunami:     { name: 'Tsunami',     type: 'flux',   power: 100,acc: 75, cat: 'special',  effect: 'spdDown' },
+  aquaShield:  { name: 'Aqua Shield', type: 'flux',   power: 0,  acc: 100, cat: 'status',   effect: 'spDefUp' },
+  // More Bloom
+  sporeBurst:  { name: 'Spore Burst', type: 'bloom',  power: 0,  acc: 90, cat: 'status',   effect: 'sleep' },
+  rootGrab:    { name: 'Root Grab',   type: 'bloom',  power: 55, acc: 95, cat: 'physical', effect: 'spdDown' },
+  photon:      { name: 'Photon',      type: 'bloom',  power: 80, acc: 85, cat: 'special',  effect: null },
+  petalDance:  { name: 'Petal Dance', type: 'bloom',  power: 95, acc: 80, cat: 'special',  effect: 'confuse' },
+  synthesis:   { name: 'Synthesis',   type: 'bloom',  power: 0,  acc: 100, cat: 'status',   effect: 'heal' },
+  // More Spark
+  discharge:   { name: 'Discharge',   type: 'spark',  power: 65, acc: 95, cat: 'special',  effect: 'stun' },
+  magnetize:   { name: 'Magnetize',   type: 'spark',  power: 0,  acc: 100, cat: 'status',   effect: 'spdDown' },
+  overcharge:  { name: 'Overcharge',  type: 'spark',  power: 100,acc: 75, cat: 'special',  effect: 'stun' },
+  staticField: { name: 'Static Field',type: 'spark',  power: 0,  acc: 100, cat: 'status',   effect: 'stun' },
+  boltStrike:  { name: 'Bolt Strike', type: 'spark',  power: 90, acc: 80, cat: 'physical', effect: 'burn' },
+  // More Void
+  soulDrain:   { name: 'Soul Drain',  type: 'void',   power: 55, acc: 95, cat: 'special',  effect: 'drain' },
+  curseMark:   { name: 'Curse Mark',  type: 'void',   power: 0,  acc: 90, cat: 'status',   effect: 'curse' },
+  abyssStrike: { name: 'Abyss Strike',type: 'void',   power: 95, acc: 75, cat: 'physical', effect: 'defDown' },
+  shadowStep:  { name: 'Shadow Step', type: 'void',   power: 45, acc: 100, cat: 'physical', effect: 'spdUp' },
+  voidPulse:   { name: 'Void Pulse',  type: 'void',   power: 70, acc: 90, cat: 'special',  effect: 'spDefDown' },
+  // More Lux
+  solarFlare:  { name: 'Solar Flare', type: 'lux',    power: 100,acc: 75, cat: 'special',  effect: 'accDown' },
+  blessing:    { name: 'Blessing',    type: 'lux',    power: 0,  acc: 100, cat: 'status',   effect: 'heal' },
+  divinePulse: { name: 'Divine Pulse',type: 'lux',    power: 80, acc: 90, cat: 'special',  effect: 'stun' },
+  lightBarrier:{ name: 'Light Barrier',type:'lux',    power: 0,  acc: 100, cat: 'status',   effect: 'spDefUp' },
+  purify:      { name: 'Purify',      type: 'lux',    power: 0,  acc: 100, cat: 'status',   effect: 'cleanse' },
+  // More Neutral
+  slam:        { name: 'Slam',        type: 'neutral',power: 60, acc: 90, cat: 'physical', effect: null },
+  quickStrike: { name: 'Quick Strike',type: 'neutral',power: 35, acc: 100, cat: 'physical', effect: 'spdUp' },
+  bodySlam:    { name: 'Body Slam',   type: 'neutral',power: 75, acc: 85, cat: 'physical', effect: 'stun' },
+  screech:     { name: 'Screech',     type: 'neutral',power: 0,  acc: 95, cat: 'status',   effect: 'defDown' },
+  recover:     { name: 'Recover',     type: 'neutral',power: 0,  acc: 100, cat: 'status',   effect: 'heal' },
+  doubleHit:   { name: 'Double Hit',  type: 'neutral',power: 30, acc: 95, cat: 'physical', effect: 'double' },
+  drainPunch:  { name: 'Drain Punch', type: 'neutral',power: 50, acc: 95, cat: 'physical', effect: 'drain' },
+  // More Glitch
+  segfault:    { name: 'Segfault',    type: 'glitch', power: 90, acc: 70, cat: 'special',  effect: 'confuse' },
+  memLeak:     { name: 'Mem Leak',    type: 'glitch', power: 0,  acc: 85, cat: 'status',   effect: 'curse' },
+  bluScreen:   { name: 'Blu Screen',  type: 'glitch', power: 120,acc: 60, cat: 'special',  effect: 'freeze' },
 };
 
 // Move pools per type and stage
@@ -319,3 +368,112 @@ export function getFusionType(type1, type2) {
   if (Math.random() < 0.1) return 'glitch'; // 10% chance of glitch fusion
   return Math.random() < 0.5 ? type1 : type2;
 }
+
+// ═══════════════════════════════════════════
+// V3 — Move Learning System
+// ═══════════════════════════════════════════
+// Moves learned at specific levels, per type. Creature can know max 4 at once.
+export const LEARNABLE_MOVES = {
+  ember:  [
+    { level: 1, move: 'tackle' }, { level: 3, move: 'emberClaw' }, { level: 6, move: 'fireball' },
+    { level: 10, move: 'smokeScreen' }, { level: 14, move: 'flameRush' }, { level: 18, move: 'blazeKick' },
+    { level: 22, move: 'magmaShield' }, { level: 28, move: 'heatWave' }, { level: 35, move: 'inferno' },
+    { level: 42, move: 'eruption' },
+  ],
+  flux: [
+    { level: 1, move: 'tackle' }, { level: 3, move: 'aquaJet' }, { level: 6, move: 'bubbleBurst' },
+    { level: 10, move: 'whirlpool' }, { level: 14, move: 'aquaShield' }, { level: 18, move: 'tideSlam' },
+    { level: 22, move: 'iceBeam' }, { level: 28, move: 'rainDance' }, { level: 35, move: 'torrent' },
+    { level: 42, move: 'tsunami' },
+  ],
+  bloom: [
+    { level: 1, move: 'scratch' }, { level: 3, move: 'vineWhip' }, { level: 6, move: 'sporeBurst' },
+    { level: 10, move: 'rootGrab' }, { level: 14, move: 'thornStorm' }, { level: 18, move: 'synthesis' },
+    { level: 22, move: 'leafBlade' }, { level: 28, move: 'photon' }, { level: 35, move: 'solarBeam' },
+    { level: 42, move: 'petalDance' },
+  ],
+  spark: [
+    { level: 1, move: 'tackle' }, { level: 3, move: 'zapStrike' }, { level: 6, move: 'sparkPulse' },
+    { level: 10, move: 'staticField' }, { level: 14, move: 'discharge' }, { level: 18, move: 'magnetize' },
+    { level: 22, move: 'thunderBolt' }, { level: 28, move: 'voltTackle' }, { level: 35, move: 'overcharge' },
+    { level: 42, move: 'boltStrike' },
+  ],
+  void: [
+    { level: 1, move: 'scratch' }, { level: 3, move: 'shadowClaw' }, { level: 6, move: 'shadowStep' },
+    { level: 10, move: 'curseMark' }, { level: 14, move: 'phantomRush' }, { level: 18, move: 'soulDrain' },
+    { level: 22, move: 'darkPulse' }, { level: 28, move: 'voidPulse' }, { level: 35, move: 'nightmare' },
+    { level: 42, move: 'abyssStrike' },
+  ],
+  lux: [
+    { level: 1, move: 'tackle' }, { level: 3, move: 'holyBeam' }, { level: 6, move: 'purify' },
+    { level: 10, move: 'prismStrike' }, { level: 14, move: 'lightBarrier' }, { level: 18, move: 'blessing' },
+    { level: 22, move: 'radiance' }, { level: 28, move: 'divinePulse' }, { level: 35, move: 'judgement' },
+    { level: 42, move: 'solarFlare' },
+  ],
+  glitch: [
+    { level: 1, move: 'tackle' }, { level: 3, move: 'overflow' }, { level: 6, move: 'corrupt' },
+    { level: 10, move: 'memLeak' }, { level: 14, move: 'darkPulse' },
+    { level: 22, move: 'segfault' }, { level: 35, move: 'bluScreen' },
+  ],
+};
+
+// ═══════════════════════════════════════════
+// V3 — Shiny System
+// ═══════════════════════════════════════════
+export const SHINY_RATE = 1 / 50; // 2% chance
+
+export function isShiny(dna) {
+  const h = hashDNA(dna);
+  return (h % 50) === 0;
+}
+
+// ═══════════════════════════════════════════
+// V3 — Materials & Drops
+// ═══════════════════════════════════════════
+export const MATERIALS = {
+  emberShard:  { name: 'Ember Shard',  icon: '🔶', desc: 'Warm crystal fragment' },
+  fluxDrop:    { name: 'Flux Drop',    icon: '💎', desc: 'Condensed water essence' },
+  bloomSeed:   { name: 'Bloom Seed',   icon: '🌰', desc: 'Pulsing life seed' },
+  sparkCore:   { name: 'Spark Core',   icon: '⚡', desc: 'Charged energy core' },
+  voidDust:    { name: 'Void Dust',    icon: '🌑', desc: 'Particles of nothingness' },
+  luxPrism:    { name: 'Lux Prism',    icon: '💠', desc: 'Refracting light crystal' },
+  glitchByte:  { name: 'Glitch Byte',  icon: '📀', desc: 'Corrupted data fragment' },
+  rawPixel:    { name: 'Raw Pixel',    icon: '⬜', desc: 'Basic digital matter' },
+  dataFragment:{ name: 'Data Fragment', icon: '📊', desc: 'Encoded information' },
+  chromaGem:   { name: 'Chroma Gem',   icon: '💜', desc: 'Shiny color crystal' },
+  ancientChip: { name: 'Ancient Chip', icon: '🔧', desc: 'Relic processor chip' },
+  notEssence:  { name: 'Not Essence',  icon: '✨', desc: 'Pure creature energy' },
+};
+
+// What types drop what materials
+export const DROP_TABLE = {
+  ember:  ['emberShard', 'rawPixel'],
+  flux:   ['fluxDrop', 'rawPixel'],
+  bloom:  ['bloomSeed', 'rawPixel'],
+  spark:  ['sparkCore', 'rawPixel'],
+  void:   ['voidDust', 'dataFragment'],
+  lux:    ['luxPrism', 'dataFragment'],
+  glitch: ['glitchByte', 'dataFragment'],
+};
+
+// Boss drops rare materials
+export const BOSS_DROPS = ['ancientChip', 'notEssence', 'chromaGem'];
+
+// ═══════════════════════════════════════════
+// V3 — Crafting Recipes
+// ═══════════════════════════════════════════
+export const RECIPES = {
+  dataTrap:    { name: 'Data Trap',     icon: '📡', materials: { rawPixel: 3 } },
+  superTrap:   { name: 'Super Trap',    icon: '📡', materials: { rawPixel: 5, dataFragment: 2 } },
+  ultraTrap:   { name: 'Ultra Trap',    icon: '📡', materials: { rawPixel: 5, dataFragment: 3, ancientChip: 1 } },
+  shinyTrap:   { name: 'Shiny Trap',    icon: '✨', materials: { chromaGem: 3, notEssence: 2, dataFragment: 5 }, desc: 'Guarantees shiny on capture!' },
+  healChip:    { name: 'Heal Chip',     icon: '💊', materials: { rawPixel: 2 } },
+  fullRestore: { name: 'Full Restore',  icon: '💉', materials: { rawPixel: 3, dataFragment: 2 } },
+  xpBooster:   { name: 'XP Booster',    icon: '📈', materials: { dataFragment: 3, notEssence: 1 }, desc: '+50% XP for 5 battles' },
+  emberStone:  { name: 'Ember Stone',   icon: '🔥', materials: { emberShard: 10, notEssence: 1 }, desc: 'Force evolve Ember type' },
+  fluxStone:   { name: 'Flux Stone',    icon: '💧', materials: { fluxDrop: 10, notEssence: 1 }, desc: 'Force evolve Flux type' },
+  bloomStone:  { name: 'Bloom Stone',   icon: '🌿', materials: { bloomSeed: 10, notEssence: 1 }, desc: 'Force evolve Bloom type' },
+  sparkStone:  { name: 'Spark Stone',   icon: '⚡', materials: { sparkCore: 10, notEssence: 1 }, desc: 'Force evolve Spark type' },
+  voidStone:   { name: 'Void Stone',    icon: '🌑', materials: { voidDust: 10, notEssence: 1 }, desc: 'Force evolve Void type' },
+  luxStone:    { name: 'Lux Stone',     icon: '✨', materials: { luxPrism: 10, notEssence: 1 }, desc: 'Force evolve Lux type' },
+};

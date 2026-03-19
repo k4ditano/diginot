@@ -6,13 +6,15 @@ import {
   TYPES, STAGES, STAGE_LEVELS, TYPE_CHART, MOVES, MOVE_POOLS,
   ZONES, FOODS, ITEMS, STARTERS,
   generateName, generateStats, xpForLevel, hashDNA, randomDNA, getTypeForDNA,
-  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType
+  BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType,
+  LEARNABLE_MOVES, MATERIALS, DROP_TABLE, BOSS_DROPS, RECIPES, SHINY_RATE, isShiny
 } from './data.js';
 
 // ─── Creature Class ───
 export class Creature {
   constructor({ dna, type, level = 1, xp = 0, nickname = null, stage = 'bit', hp = null,
-                happiness = 50, hunger = 50, wins = 0, losses = 0, id = null }) {
+                happiness = 50, hunger = 50, wins = 0, losses = 0, id = null,
+                learnedMoves = null, isShinyFlag = null }) {
     this.id = id || crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).substr(2);
     this.dna = dna;
     this.type = type;
@@ -26,26 +28,85 @@ export class Creature {
     this.losses = losses;
     this.stats = generateStats(dna, level, stage);
     if (hp !== null) this.stats.hp = hp;
-    this.status = null; // burn, freeze, poison, stun
+    this.status = null;
     this.statusTurns = 0;
+    // V3: shiny, learned moves, stat stages
+    this.isShiny = isShinyFlag !== null ? isShinyFlag : isShiny(dna);
+    this.learnedMoves = learnedMoves || this._initMoves();
+    this.statStages = { atk: 0, def: 0, spAtk: 0, spDef: 0, spd: 0, acc: 0 };
+  }
+
+  _initMoves() {
+    // Start with moves learnable at current level or below
+    const pool = LEARNABLE_MOVES[this.type] || [];
+    const available = pool.filter(e => e.level <= this.level);
+    const picks = available.slice(-4).map(e => e.move);
+    // If less than 2, pad with type pool defaults
+    if (picks.length < 2) {
+      const defaults = MOVE_POOLS[this.type]?.bit || ['tackle'];
+      defaults.forEach(m => { if (!picks.includes(m)) picks.push(m); });
+    }
+    return picks.slice(0, 4);
   }
 
   get moves() {
-    const pool = MOVE_POOLS[this.type]?.[this.stage] || ['tackle', 'scratch'];
-    return pool.slice(0, 4).map(id => ({ id, ...MOVES[id] }));
+    return this.learnedMoves.map(id => ({ id, ...MOVES[id] })).filter(m => m.name);
   }
 
   get displayName() { return this.nickname; }
-
   get typeIcon() { return TYPES[this.type]?.icon || '❓'; }
-
   get isAlive() { return this.stats.hp > 0; }
 
   get canEvolve() {
     const idx = STAGES.indexOf(this.stage);
     if (idx >= STAGES.length - 1) return false;
-    const nextStage = STAGES[idx + 1];
-    return this.level >= STAGE_LEVELS[nextStage];
+    return this.level >= STAGE_LEVELS[STAGES[idx + 1]];
+  }
+
+  // Effective stat considering stat stages
+  getStat(stat) {
+    const base = this.stats[stat] || 0;
+    const stage = this.statStages?.[stat] || 0;
+    const mult = stage >= 0
+      ? (2 + stage) / 2
+      : 2 / (2 - stage);
+    return Math.max(1, Math.floor(base * mult));
+  }
+
+  resetStatStages() {
+    this.statStages = { atk: 0, def: 0, spAtk: 0, spDef: 0, spd: 0, acc: 0 };
+  }
+
+  changeStatStage(stat, delta) {
+    if (!this.statStages) this.statStages = { atk: 0, def: 0, spAtk: 0, spDef: 0, spd: 0, acc: 0 };
+    const key = stat === 'accuracy' ? 'acc' : stat;
+    if (!(key in this.statStages)) return null;
+    const old = this.statStages[key];
+    this.statStages[key] = Math.max(-6, Math.min(6, old + delta));
+    const changed = this.statStages[key] - old;
+    if (changed > 0) return `${this.displayName}'s ${key.toUpperCase()} rose!`;
+    if (changed < 0) return `${this.displayName}'s ${key.toUpperCase()} fell!`;
+    return `${this.displayName}'s ${key.toUpperCase()} won't go higher!`;
+  }
+
+  // Check if a new move can be learned at current level
+  getNewMoves() {
+    const pool = LEARNABLE_MOVES[this.type] || [];
+    return pool
+      .filter(e => e.level === this.level && !this.learnedMoves.includes(e.move))
+      .map(e => e.move);
+  }
+
+  forgetMove(idx) {
+    this.learnedMoves.splice(idx, 1);
+  }
+
+  learnMove(moveId) {
+    if (this.learnedMoves.length < 4) {
+      this.learnedMoves.push(moveId);
+      return true;
+    }
+    return false; // need to forget one first
   }
 
   evolve() {
@@ -53,7 +114,9 @@ export class Creature {
     if (idx >= STAGES.length - 1) return false;
     this.stage = STAGES[idx + 1];
     this.nickname = generateName(this.dna, this.type, this.stage);
+    const oldHpRatio = this.stats.hp / this.stats.maxHp;
     this.stats = generateStats(this.dna, this.level, this.stage);
+    this.stats.hp = Math.max(1, Math.floor(this.stats.maxHp * oldHpRatio));
     return true;
   }
 
@@ -65,6 +128,7 @@ export class Creature {
     this.stats.hp = this.stats.maxHp;
     this.status = null;
     this.statusTurns = 0;
+    this.resetStatStages();
   }
 
   addXP(amount) {
@@ -73,7 +137,9 @@ export class Creature {
     while (this.xp >= xpForLevel(this.level)) {
       this.xp -= xpForLevel(this.level);
       this.level++;
+      const oldHpRatio = this.stats.hp / this.stats.maxHp;
       this.stats = generateStats(this.dna, this.level, this.stage);
+      this.stats.hp = Math.floor(this.stats.maxHp * oldHpRatio);
       leveled = true;
     }
     return leveled;
@@ -85,11 +151,10 @@ export class Creature {
   }
 
   train(statBoost) {
-    const stats = this.stats;
     for (const [key, val] of Object.entries(statBoost)) {
-      if (stats[key] !== undefined) stats[key] += val;
+      if (this.stats[key] !== undefined) this.stats[key] += val;
     }
-    if (stats.hp > stats.maxHp) stats.hp = stats.maxHp;
+    if (this.stats.hp > this.stats.maxHp) this.stats.hp = this.stats.maxHp;
   }
 
   serialize() {
@@ -98,23 +163,22 @@ export class Creature {
       xp: this.xp, nickname: this.nickname, stage: this.stage,
       hp: this.stats.hp, happiness: this.happiness, hunger: this.hunger,
       wins: this.wins, losses: this.losses,
+      learnedMoves: this.learnedMoves,
+      isShinyFlag: this.isShiny,
     };
   }
 
-  static deserialize(data) {
-    return new Creature(data);
-  }
+  static deserialize(data) { return new Creature(data); }
 
-  // Export as shareable code
   toShareCode() {
-    const d = { d: this.dna, t: this.type, l: this.level, s: this.stage, n: this.nickname };
+    const d = { d: this.dna, t: this.type, l: this.level, s: this.stage, n: this.nickname, sh: this.isShiny ? 1 : 0 };
     return btoa(JSON.stringify(d));
   }
 
   static fromShareCode(code) {
     try {
       const d = JSON.parse(atob(code));
-      return new Creature({ dna: d.d, type: d.t, level: d.l, stage: d.s, nickname: d.n });
+      return new Creature({ dna: d.d, type: d.t, level: d.l, stage: d.s, nickname: d.n, isShinyFlag: !!d.sh });
     } catch { return null; }
   }
 }
@@ -218,7 +282,7 @@ export class GameState {
 }
 
 // ─── Wild Creature Generator ───
-export function generateWildCreature(zone, playerLevel) {
+export function generateWildCreature(zone, playerLevel, forceShiny = false) {
   const dna = randomDNA();
   const types = zone.types;
   const type = types[Math.floor(Math.random() * types.length)];
@@ -226,13 +290,13 @@ export function generateWildCreature(zone, playerLevel) {
   const maxLvl = Math.min(playerLevel + 3, minLvl + 10);
   const level = Math.floor(Math.random() * (maxLvl - minLvl + 1)) + minLvl;
 
-  // Determine stage based on level
   let stage = 'bit';
   for (const s of STAGES) {
     if (level >= STAGE_LEVELS[s]) stage = s;
   }
 
-  return new Creature({ dna, type, level, stage });
+  const isShinyFlag = forceShiny || Math.random() < SHINY_RATE;
+  return new Creature({ dna, type, level, stage, isShinyFlag });
 }
 
 // ─── Battle Engine ───
@@ -259,177 +323,257 @@ export class BattleEngine {
 
   calculateDamage(attacker, defender, move) {
     if (move.cat === 'status') return 0;
-    const atk = move.cat === 'physical' ? attacker.stats.atk : attacker.stats.spAtk;
-    const def = move.cat === 'physical' ? defender.stats.def : defender.stats.spDef;
+    const atk = move.cat === 'physical'
+      ? attacker.getStat('atk')
+      : attacker.getStat('spAtk');
+    const def = move.cat === 'physical'
+      ? defender.getStat('def')
+      : defender.getStat('spDef');
     const typeBonus = attacker.type === move.type ? 1.2 : 1;
     const typeMult = this.getTypeMultiplier(move.type, defender.type);
     const random = 0.85 + Math.random() * 0.15;
     const baseDmg = ((2 * attacker.level / 5 + 2) * move.power * atk / def / 50 + 2);
-    return Math.max(1, Math.floor(baseDmg * typeBonus * typeMult * random));
+    let dmg = Math.max(1, Math.floor(baseDmg * typeBonus * typeMult * random));
+    if (attacker.status === 'burn' && move.cat === 'physical') dmg = Math.floor(dmg * 0.5);
+    return dmg;
   }
 
   executeMove(attacker, defender, move) {
     const result = {
-      attacker: attacker.displayName,
-      defender: defender.displayName,
-      move: move.name,
-      damage: 0,
-      missed: false,
-      effective: 'normal',
-      effect: null,
-      fainted: false,
-      healed: 0,
+      attacker: attacker.displayName, defender: defender.displayName,
+      move: move.name, damage: 0, missed: false, effective: 'normal',
+      effect: null, fainted: false, healed: 0, statMsg: null, isCrit: false,
     };
 
-    // Accuracy check
-    if (Math.random() * 100 > move.acc) {
+    // Accuracy check (modified by acc stage)
+    const accMult = attacker.statStages?.acc >= 0
+      ? (3 + (attacker.statStages.acc || 0)) / 3
+      : 3 / (3 - (attacker.statStages.acc || 0));
+    if (Math.random() * 100 > move.acc * accMult) {
       result.missed = true;
-      this.log.push(`${attacker.displayName} used ${move.name}... but missed!`);
+      this.log.push(`${attacker.displayName} used ${move.name}... missed!`);
       return result;
     }
 
-    // Status moves
+    // ── STATUS MOVES ──
     if (move.cat === 'status') {
-      if (move.effect === 'heal') {
-        const healAmt = Math.floor(attacker.stats.maxHp * 0.4);
-        attacker.heal(healAmt);
-        result.healed = healAmt;
-        this.log.push(`${attacker.displayName} used ${move.name} and recovered ${healAmt} HP!`);
-        return result;
+      let msg = '';
+      switch (move.effect) {
+        case 'heal': {
+          const amt = Math.floor(attacker.stats.maxHp * 0.4);
+          attacker.heal(amt); result.healed = amt;
+          msg = `${attacker.displayName} recovered ${amt} HP!`; break;
+        }
+        case 'defUp':    msg = attacker.changeStatStage('def', +2); break;
+        case 'spAtkUp':  msg = attacker.changeStatStage('spAtk', +2); break;
+        case 'spDefUp':  msg = attacker.changeStatStage('spDef', +2); break;
+        case 'spdUp':    msg = attacker.changeStatStage('spd', +1); break;
+        case 'defDown':  msg = defender.changeStatStage('def', -2); break;
+        case 'spDefDown':msg = defender.changeStatStage('spDef', -2); break;
+        case 'spdDown':  msg = defender.changeStatStage('spd', -2); break;
+        case 'accDown':  msg = defender.changeStatStage('acc', -2); break;
+        case 'scare':    msg = defender.changeStatStage('atk', -1); break;
+        case 'stun':
+          if (!defender.status) { defender.status = 'stun'; defender.statusTurns = 2; msg = `${defender.displayName} is stunned!`; }
+          break;
+        case 'sleep':
+          if (!defender.status) { defender.status = 'sleep'; defender.statusTurns = 2; msg = `${defender.displayName} fell asleep!`; }
+          break;
+        case 'curse':
+          if (!defender.status) { defender.status = 'curse'; defender.statusTurns = 5; msg = `${defender.displayName} is cursed!`; }
+          break;
+        case 'cleanse':
+          attacker.status = null; attacker.statusTurns = 0; attacker.resetStatStages();
+          msg = `${attacker.displayName} was cleansed!`; break;
       }
-      if (move.effect === 'scare') {
-        // Lower enemy attack
-        defender.stats.atk = Math.max(1, defender.stats.atk - 5);
-        this.log.push(`${attacker.displayName} used ${move.name}! ${defender.displayName}'s ATK fell!`);
-        return result;
-      }
+      result.statMsg = msg;
+      this.log.push(msg || `${attacker.displayName} used ${move.name}!`);
+      return result;
     }
 
-    // Damage
-    const dmg = this.calculateDamage(attacker, defender, move);
+    // ── DAMAGE MOVES ──
+    // Critical hit (1/16 chance, 1.5x damage)
+    result.isCrit = Math.random() < 0.0625;
+    let dmg = this.calculateDamage(attacker, defender, move);
+    if (result.isCrit) dmg = Math.floor(dmg * 1.5);
+    // Double hit
+    if (move.effect === 'double') dmg = Math.floor(dmg * 0.6) * 2;
     result.damage = dmg;
     defender.stats.hp = Math.max(0, defender.stats.hp - dmg);
 
-    // Type effectiveness
-    const mult = this.getTypeMultiplier(move.type, defender.type);
-    if (mult > 1) result.effective = 'super';
-    else if (mult < 1) result.effective = 'weak';
-
-    // Apply effect
-    if (move.effect && Math.random() < 0.3 && !defender.status) {
-      defender.status = move.effect;
-      defender.statusTurns = 3;
-      result.effect = move.effect;
+    // Drain: attacker heals 50% of damage
+    if (move.effect === 'drain') {
+      const drainAmt = Math.max(1, Math.floor(dmg * 0.5));
+      attacker.heal(drainAmt); result.healed = drainAmt;
     }
 
-    // Faint check
+    const mult = this.getTypeMultiplier(move.type, defender.type);
+    if (mult > 1) result.effective = 'super';
+    else if (mult < 1 && mult > 0) result.effective = 'weak';
+
+    // Apply secondary effects
+    const effectChance = move.effect === 'stun' ? 0.25 : 0.3;
+    if (move.effect && move.effect !== 'double' && move.effect !== 'drain' && Math.random() < effectChance && !defender.status) {
+      const se = move.effect;
+      if (['burn','freeze','poison','stun','sleep','curse','confuse'].includes(se)) {
+        defender.status = se;
+        defender.statusTurns = se === 'burn' || se === 'poison' ? 999 : 3;
+        result.effect = se;
+      } else if (se === 'spdDown') { defender.changeStatStage('spd', -1); result.statMsg = `${defender.displayName}'s SPD fell!`; }
+      else if (se === 'defDown') { defender.changeStatStage('def', -1); result.statMsg = `${defender.displayName}'s DEF fell!`; }
+    }
+
     if (defender.stats.hp <= 0) result.fainted = true;
 
-    let log = `${attacker.displayName} used ${move.name}! (${dmg} dmg)`;
-    if (result.effective === 'super') log += ' Super effective!';
-    if (result.effective === 'weak') log += ' Not very effective...';
-    if (result.effect) log += ` ${defender.displayName} is ${result.effect}ed!`;
-    if (result.fainted) log += ` ${defender.displayName} fainted!`;
+    let log = `${attacker.displayName} → ${move.name}`;
+    if (result.isCrit) log += ' 💥CRIT';
+    log += ` (${dmg} dmg)`;
+    if (result.effective === 'super') log += ' ✨Super effective!';
+    if (result.effective === 'weak') log += ' 😐Not effective';
+    if (result.effect) log += ` [${result.effect}]`;
+    if (result.fainted) log += ` 💀 ${defender.displayName} fainted!`;
     this.log.push(log);
-
     return result;
   }
 
   applyStatus(creature) {
     if (!creature.status || !creature.isAlive) return null;
-    creature.statusTurns--;
     const result = { type: creature.status, damage: 0, skip: false };
 
     switch (creature.status) {
       case 'burn':
         result.damage = Math.max(1, Math.floor(creature.stats.maxHp * 0.06));
         creature.stats.hp = Math.max(0, creature.stats.hp - result.damage);
-        this.log.push(`${creature.displayName} is burned! (-${result.damage} HP)`);
+        this.log.push(`🔥 ${creature.displayName} burned! (-${result.damage})`);
         break;
       case 'poison':
         result.damage = Math.max(1, Math.floor(creature.stats.maxHp * 0.08));
         creature.stats.hp = Math.max(0, creature.stats.hp - result.damage);
-        this.log.push(`${creature.displayName} is poisoned! (-${result.damage} HP)`);
+        this.log.push(`☠️ ${creature.displayName} poisoned! (-${result.damage})`);
+        break;
+      case 'curse':
+        result.damage = Math.max(1, Math.floor(creature.stats.maxHp * 0.12));
+        creature.stats.hp = Math.max(0, creature.stats.hp - result.damage);
+        this.log.push(`👁️ ${creature.displayName} cursed! (-${result.damage})`);
         break;
       case 'freeze':
-        if (Math.random() < 0.5) {
-          result.skip = true;
-          this.log.push(`${creature.displayName} is frozen solid!`);
-        }
+        if (Math.random() < 0.4) { result.skip = true; this.log.push(`🧊 ${creature.displayName} is frozen!`); }
+        else { creature.status = null; this.log.push(`${creature.displayName} thawed!`); return result; }
         break;
       case 'stun':
-        if (Math.random() < 0.4) {
-          result.skip = true;
-          this.log.push(`${creature.displayName} is stunned!`);
+        if (Math.random() < 0.35) { result.skip = true; this.log.push(`⚡ ${creature.displayName} is stunned!`); }
+        break;
+      case 'sleep':
+        result.skip = true; this.log.push(`💤 ${creature.displayName} is asleep!`);
+        break;
+      case 'confuse':
+        if (Math.random() < 0.33) {
+          result.skip = true; this.log.push(`😵 ${creature.displayName} is confused and hurt itself!`);
+          const selfDmg = Math.max(1, Math.floor(creature.stats.maxHp * 0.05));
+          creature.stats.hp = Math.max(0, creature.stats.hp - selfDmg);
         }
         break;
     }
 
-    if (creature.statusTurns <= 0) {
-      creature.status = null;
-      this.log.push(`${creature.displayName} recovered from status!`);
+    // Tick down (not for burn/poison — those are permanent until cured)
+    if (!['burn','poison','curse'].includes(creature.status)) {
+      creature.statusTurns--;
+      if (creature.statusTurns <= 0) {
+        this.log.push(`${creature.displayName} recovered from ${creature.status}!`);
+        creature.status = null;
+      }
     }
-
     return result;
   }
 
   getAIMove() {
     const moves = this.enemy.moves;
-    // AI: prefer super effective moves
-    const superEffective = moves.filter(m => {
-      if (m.cat === 'status') return false;
-      return this.getTypeMultiplier(m.type, this.player.type) > 1;
-    });
-    if (superEffective.length > 0 && Math.random() < 0.6) {
-      return superEffective[Math.floor(Math.random() * superEffective.length)];
+    if (!moves.length) return { id: 'tackle', ...MOVES.tackle };
+    // Super effective first
+    const superEff = moves.filter(m => m.cat !== 'status' && this.getTypeMultiplier(m.type, this.player.type) > 1);
+    if (superEff.length && Math.random() < 0.65) return superEff[Math.floor(Math.random() * superEff.length)];
+    // Heal when low HP
+    if (this.enemy.stats.hp < this.enemy.stats.maxHp * 0.25) {
+      const healMove = moves.find(m => m.effect === 'heal' || m.effect === 'cleanse');
+      if (healMove && Math.random() < 0.7) return healMove;
     }
-    // Otherwise pick random damaging move
-    const damaging = moves.filter(m => m.power > 0);
-    if (damaging.length > 0) return damaging[Math.floor(Math.random() * damaging.length)];
+    // Status move occasionally
+    const statMoves = moves.filter(m => m.cat === 'status');
+    if (statMoves.length && Math.random() < 0.2) return statMoves[Math.floor(Math.random() * statMoves.length)];
+    // Highest power available
+    const damaging = moves.filter(m => m.power > 0).sort((a, b) => b.power - a.power);
+    if (damaging.length) return damaging[0];
     return moves[Math.floor(Math.random() * moves.length)];
   }
 
   executeTurn(playerMoveId) {
+    // Legacy: executes both turns (used by PvP simulator)
     this.turn++;
     const playerMove = this.player.moves.find(m => m.id === playerMoveId) || this.player.moves[0];
     const enemyMove = this.getAIMove();
     const results = [];
 
-    // Determine turn order
-    const playerFirst = this.player.stats.spd >= this.enemy.stats.spd;
+    const playerFirst = this.player.getStat('spd') >= this.enemy.getStat('spd');
     const first = playerFirst ? { atk: this.player, def: this.enemy, move: playerMove, isPlayer: true }
                               : { atk: this.enemy, def: this.player, move: enemyMove, isPlayer: false };
     const second = playerFirst ? { atk: this.enemy, def: this.player, move: enemyMove, isPlayer: false }
                                : { atk: this.player, def: this.enemy, move: playerMove, isPlayer: true };
 
-    // First attacker
     const status1 = this.applyStatus(first.atk);
     if (!status1?.skip && first.atk.isAlive) {
       results.push({ ...this.executeMove(first.atk, first.def, first.move), isPlayer: first.isPlayer });
     }
-
-    // Check if battle over
     if (!this.enemy.isAlive || !this.player.isAlive) {
-      this.finished = true;
-      this.winner = this.player.isAlive ? 'player' : 'enemy';
-      return results;
+      this.finished = true; this.winner = this.player.isAlive ? 'player' : 'enemy'; return results;
     }
-
-    // Second attacker
     const status2 = this.applyStatus(second.atk);
     if (!status2?.skip && second.atk.isAlive) {
       results.push({ ...this.executeMove(second.atk, second.def, second.move), isPlayer: second.isPlayer });
     }
-
-    // Check if battle over
     if (!this.enemy.isAlive || !this.player.isAlive) {
-      this.finished = true;
-      this.winner = this.player.isAlive ? 'player' : 'enemy';
+      this.finished = true; this.winner = this.player.isAlive ? 'player' : 'enemy';
     }
-
     return results;
   }
 
+  // V3: Single player move execution
+  executePlayerMove(moveId) {
+    this.turn++;
+    const move = this.player.moves.find(m => m.id === moveId) || this.player.moves[0];
+    const status = this.applyStatus(this.player);
+    if (status?.skip || !this.player.isAlive) {
+      return { skipped: true, attacker: this.player.displayName, status: this.player.status };
+    }
+    const result = this.executeMove(this.player, this.enemy, move);
+    result.isPlayer = true;
+    if (this.enemy.stats.hp <= 0) {
+      this.finished = true; this.winner = 'player';
+      this.log.push(`💀 ${this.enemy.displayName} fainted!`);
+    }
+    return result;
+  }
+
+  // V3: Single enemy move execution
+  executeEnemyMove(moveId) {
+    const move = this.enemy.moves.find(m => m.id === moveId) || this.enemy.moves[0];
+    const status = this.applyStatus(this.enemy);
+    if (status?.skip || !this.enemy.isAlive) {
+      return { skipped: true, attacker: this.enemy.displayName, status: this.enemy.status };
+    }
+    const result = this.executeMove(this.enemy, this.player, move);
+    result.isPlayer = false;
+    if (this.player.stats.hp <= 0) {
+      this.finished = true; this.winner = 'enemy';
+      this.log.push(`💀 ${this.player.displayName} fainted!`);
+      // Trigger swap
+    }
+    return result;
+  }
+
+  // V3: Swap player creature in battle
+  swapPlayer(newCreature) {
+    this.player = newCreature;
+  }
   // Capture attempt
   attemptCapture(trapType = 'dataTrap') {
     const trap = ITEMS[trapType];
@@ -478,10 +622,9 @@ export function rollEncounter() {
 
 // V2 imports merged to top of file
 
-// Patch GameState with V2 fields
+// Patch GameState with V2+V3 fields
 const _origSave = GameState.prototype.save;
 GameState.prototype.save = function() {
-  // Ensure V2 fields exist before saving
   if (!this.bossesDefeated) this.bossesDefeated = [];
   if (!this.achievementsUnlocked) this.achievementsUnlocked = [];
   if (!this.lastLoginDate) this.lastLoginDate = null;
@@ -489,28 +632,27 @@ GameState.prototype.save = function() {
   if (!this.totalFusions) this.totalFusions = 0;
   if (!this.totalPvP) this.totalPvP = 0;
   if (!this.dailyClaimed) this.dailyClaimed = false;
+  if (!this.materials) this.materials = {};
+  if (!this.xpBoosterBattles) this.xpBoosterBattles = 0;
+  if (!this.totalShiny) this.totalShiny = 0;
 
   const data = {
     team: this.team.map(c => c.serialize()),
     storage: this.storage.map(c => c.serialize()),
     notdex: [...this.notdex],
-    coins: this.coins,
-    items: this.items,
-    foods: this.foods,
-    activeIdx: this.activeIdx,
-    totalSteps: this.totalSteps,
-    totalBattles: this.totalBattles,
-    badges: this.badges,
-    started: this.started,
-    lastSave: Date.now(),
-    // V2 fields
+    coins: this.coins, items: this.items, foods: this.foods,
+    activeIdx: this.activeIdx, totalSteps: this.totalSteps,
+    totalBattles: this.totalBattles, badges: this.badges,
+    started: this.started, lastSave: Date.now(),
     bossesDefeated: this.bossesDefeated,
     achievementsUnlocked: this.achievementsUnlocked,
-    lastLoginDate: this.lastLoginDate,
-    loginStreak: this.loginStreak,
-    totalFusions: this.totalFusions,
-    totalPvP: this.totalPvP,
+    lastLoginDate: this.lastLoginDate, loginStreak: this.loginStreak,
+    totalFusions: this.totalFusions, totalPvP: this.totalPvP,
     dailyClaimed: this.dailyClaimed,
+    // V3
+    materials: this.materials,
+    xpBoosterBattles: this.xpBoosterBattles,
+    totalShiny: this.totalShiny,
   };
   localStorage.setItem('diginot_save', JSON.stringify(data));
 };
@@ -533,7 +675,6 @@ GameState.prototype.load = function() {
     this.badges = data.badges || [];
     this.started = data.started || false;
     this.lastSave = data.lastSave;
-    // V2 fields
     this.bossesDefeated = data.bossesDefeated || [];
     this.achievementsUnlocked = data.achievementsUnlocked || [];
     this.lastLoginDate = data.lastLoginDate || null;
@@ -541,10 +682,12 @@ GameState.prototype.load = function() {
     this.totalFusions = data.totalFusions || 0;
     this.totalPvP = data.totalPvP || 0;
     this.dailyClaimed = data.dailyClaimed || false;
+    // V3
+    this.materials = data.materials || {};
+    this.xpBoosterBattles = data.xpBoosterBattles || 0;
+    this.totalShiny = data.totalShiny || 0;
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 };
 
 // ─── V2: Boss Encounter ───
@@ -673,4 +816,69 @@ export function simulatePvPBattle(team1, team2) {
     t1remaining: t1.length - t1idx,
     t2remaining: t2.length - t2idx,
   };
+}
+
+// ─── V3: Material Drops ───
+export function rollMaterialDrop(creature, isBoss = false) {
+  const drops = [];
+  if (isBoss) {
+    // Boss always drops 2-3 materials including rare ones
+    drops.push(BOSS_DROPS[Math.floor(Math.random() * BOSS_DROPS.length)]);
+    drops.push(BOSS_DROPS[Math.floor(Math.random() * BOSS_DROPS.length)]);
+    const typeDrops = DROP_TABLE[creature.type] || ['rawPixel'];
+    drops.push(typeDrops[0]);
+    // Shiny bonus
+    if (creature.isShiny) drops.push('chromaGem');
+  } else {
+    const typeDrops = DROP_TABLE[creature.type] || ['rawPixel'];
+    // Always drop basic material
+    if (Math.random() < 0.7) drops.push(typeDrops[0]);
+    if (Math.random() < 0.3) drops.push(typeDrops[1] || typeDrops[0]);
+    // Rare drop: notEssence
+    if (Math.random() < 0.05) drops.push('notEssence');
+    // Shiny drops chromaGem
+    if (creature.isShiny && Math.random() < 0.5) drops.push('chromaGem');
+  }
+  return drops;
+}
+
+export function addMaterials(gameState, drops) {
+  if (!gameState.materials) gameState.materials = {};
+  drops.forEach(mat => {
+    gameState.materials[mat] = (gameState.materials[mat] || 0) + 1;
+  });
+}
+
+// ─── V3: Crafting ───
+export function canCraft(gameState, recipeId) {
+  const recipe = RECIPES[recipeId];
+  if (!recipe) return false;
+  const mats = gameState.materials || {};
+  return Object.entries(recipe.materials).every(([mat, qty]) => (mats[mat] || 0) >= qty);
+}
+
+export function craftItem(gameState, recipeId) {
+  if (!canCraft(gameState, recipeId)) return false;
+  const recipe = RECIPES[recipeId];
+  // Consume materials
+  Object.entries(recipe.materials).forEach(([mat, qty]) => {
+    gameState.materials[mat] -= qty;
+  });
+  // Give item
+  if (['dataTrap','superTrap','ultraTrap','shinyTrap'].includes(recipeId)) {
+    gameState.items[recipeId] = (gameState.items[recipeId] || 0) + 1;
+  } else if (['healChip','fullRestore'].includes(recipeId)) {
+    gameState.items[recipeId] = (gameState.items[recipeId] || 0) + 1;
+  } else if (recipeId === 'xpBooster') {
+    gameState.xpBoosterBattles = (gameState.xpBoosterBattles || 0) + 5;
+  } else if (recipeId.endsWith('Stone')) {
+    gameState.items[recipeId] = (gameState.items[recipeId] || 0) + 1;
+  }
+  return true;
+}
+
+// ─── V3: Move Learning ───
+export function checkMoveLearning(creature) {
+  // Returns array of new move IDs to learn at current level
+  return creature.getNewMoves();
 }
