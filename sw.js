@@ -1,4 +1,4 @@
-const CACHE_NAME = 'diginot-v10';
+const CACHE_NAME = 'diginot-v11';
 const ASSETS = [
   '/',
   '/index.html',
@@ -14,7 +14,16 @@ const ASSETS = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Add files one by one so one failure doesn't kill the whole install
+      for (const asset of ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (err) {
+          console.warn('SW: failed to cache', asset, err);
+        }
+      }
+    })
   );
   self.skipWaiting();
 });
