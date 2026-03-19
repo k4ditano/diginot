@@ -14,9 +14,10 @@ import {
   BattleEngine, generateWildCreature, generateBoss, performFusion,
   checkAchievements, checkDailyLogin, simulatePvPBattle,
   exportTeamCode, importTeamCode,
-  addMaterials, canCraft, craftItem, checkMoveLearning
+  addMaterials, canCraft, craftItem, checkMoveLearning,
+  Creature, GameState, getAvailableZones, rollEncounter, getTrainingReward,
+  claimDailyReward
 } from './game.js';
-import { Creature, GameState, BattleEngine, generateWildCreature, getAvailableZones, rollEncounter, getTrainingReward, generateBoss, performFusion, checkAchievements, checkDailyLogin, claimDailyReward, exportTeamCode, importTeamCode, simulatePvPBattle, addMaterials, canCraft, craftItem, checkMoveLearning } from './game.js';
 
 // ─── State ───
 let game = new GameState();
