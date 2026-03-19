@@ -198,14 +198,23 @@ function renderHome() {
         ${creatureImg(c, 5, 'idle-sprite')}
       </div>
       <div class="home-bars">
-        <div class="bar-row"><span class="bar-label">HP</span>${hpBar(c.stats.hp, c.stats.maxHp)}</div>
+        <div class="bar-row">
+          <span class="bar-label">HP</span>
+          ${hpBar(c.stats.hp, c.stats.maxHp)}
+          ${c.happiness >= 70 && c.hunger >= 50 && c.stats.hp < c.stats.maxHp ? '<span class="regen-dot" title="Recovering">💚</span>' : ''}
+        </div>
         <div class="bar-row"><span class="bar-label">XP</span>${xpBar(c.xp, c.level)}</div>
         <div class="bar-row"><span class="bar-label">😊</span><div class="stat-bar"><div class="stat-fill happy" style="width:${c.happiness}%"></div></div></div>
         <div class="bar-row"><span class="bar-label">🍖</span><div class="stat-bar"><div class="stat-fill hunger" style="width:${c.hunger}%"></div></div></div>
       </div>
       <div class="home-quick-actions">
-        <button class="quick-btn heal-btn" id="heal-btn">💊 Heal</button>
-        ${game.materials?.notEssence ? `<button class="quick-btn boost-btn" id="boost-btn">✨ Boost XP</button>` : ''}
+        <button class="quick-btn heal-btn" id="heal-btn">
+          💊 Heal
+          <span class="item-count">
+            ${game.items.fullRestore > 0 ? `💉x${game.items.fullRestore}` : game.items.healChip > 0 ? `💊x${game.items.healChip}` : '❌'}
+          </span>
+        </button>
+        ${game.materials?.notEssence ? `<button class="quick-btn boost-btn" id="boost-btn">✨ Boost XP (x${game.materials.notEssence})</button>` : ''}
       </div>
       <div class="home-footer">
         <span>🪙 ${game.coins}</span>
@@ -828,7 +837,30 @@ function render() {
   if (currentScreen === 'home') {
     const healBtn = document.getElementById('heal-btn');
     if (healBtn) healBtn.addEventListener('click', () => {
-      if (game.active) { game.active.fullHeal(); SFX.heal(); game.save(); render(); showMessage(`💊 ${game.active.displayName} fully healed!`); }
+      if (!game.active) return;
+      const c = game.active;
+      if (c.stats.hp >= c.stats.maxHp) {
+        showMessage(`${c.displayName} is already at full HP!`);
+        return;
+      }
+      // Use Full Restore first, then Heal Chip
+      if (game.items.fullRestore > 0) {
+        game.items.fullRestore--;
+        c.fullHeal();
+        SFX.heal();
+        game.save();
+        showMessage(`💉 Full Restore used! ${c.displayName} fully healed!`);
+      } else if (game.items.healChip > 0) {
+        game.items.healChip--;
+        const healed = Math.min(c.stats.maxHp - c.stats.hp, 50);
+        c.stats.hp = Math.min(c.stats.maxHp, c.stats.hp + 50);
+        SFX.heal();
+        game.save();
+        showMessage(`💊 Heal Chip used! +${healed} HP!`);
+      } else {
+        showMessage(`💊 No healing items!\nBuy some at the Shop or craft them.`);
+      }
+      render();
     });
     const boostBtn = document.getElementById('boost-btn');
     if (boostBtn) boostBtn.addEventListener('click', () => {
@@ -2068,15 +2100,34 @@ function startIdleAnimation() {
 
 // ─── Hunger/Happiness decay ───
 function startLifeCycle() {
+  // ── Every 1 min: hunger decay + passive HP regen ──
   setInterval(() => {
     if (!game.active || !game.started) return;
+    // Hunger decay
     game.active.hunger = Math.max(0, game.active.hunger - 1);
     if (game.active.hunger <= 0) {
       game.active.happiness = Math.max(0, game.active.happiness - 2);
     }
+    // Passive HP regen (slow): heals 5% max HP every minute when happiness >= 70
+    const c = game.active;
+    if (c.stats.hp < c.stats.maxHp && c.happiness >= 70 && c.hunger >= 50) {
+      const regen = Math.max(1, Math.floor(c.stats.maxHp * 0.05));
+      c.stats.hp = Math.min(c.stats.maxHp, c.stats.hp + regen);
+      // Show regen indicator
+      if (currentScreen === 'home') render();
+    }
     game.save();
-    if (currentScreen === 'home') render();
   }, 60000); // every minute
+
+  // ── Every 3 min: full passive heal if very happy + full hunger ──
+  setInterval(() => {
+    if (!game.active || !game.started) return;
+    const c = game.active;
+    if (c.stats.hp < c.stats.maxHp && c.happiness >= 95 && c.hunger >= 90) {
+      c.stats.hp = Math.min(c.stats.maxHp, c.stats.hp + Math.floor(c.stats.maxHp * 0.15));
+      if (currentScreen === 'home') render();
+    }
+  }, 180000); // every 3 minutes
 }
 
 // ─── Button Event Binding ───

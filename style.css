@@ -2346,3 +2346,16 @@ body {
 
 .screen-swap-battle { display: flex; flex-direction: column; height: 100%; gap: 0.5rem; }
 .hint-sm { font-size: 0.72rem; color: var(--text-dim); margin: 0; }
+
+/* Passive HP regen indicator */
+.regen-dot {
+  font-size: 0.65rem;
+  animation: pulse-glow 1.5s ease-in-out infinite;
+  margin-left: 2px;
+}
+
+.item-count {
+  font-size: 0.55rem;
+  opacity: 0.8;
+  margin-left: 2px;
+}
