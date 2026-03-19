@@ -137,8 +137,12 @@ function shakeSprite(selector) {
 function hpBar(hp, maxHp) {
   const pct = Math.max(0, (hp / maxHp) * 100);
   const color = pct > 50 ? '#44cc44' : pct > 20 ? '#cccc00' : '#cc3333';
-  return `<div class="hp-bar"><div class="hp-fill" style="width:${pct}%;background:${color}"></div></div>
-          <span class="hp-text">${hp}/${maxHp}</span>`;
+  return `<div style="display:flex;align-items:center;gap:3px;">
+    <div class="hp-bar" style="width:40px;height:5px;flex:none;">
+      <div class="hp-fill" style="width:${pct}%;background:${color}"></div>
+    </div>
+    <span class="hp-text" style="font-size:5px;flex:none;">${hp}/${maxHp}</span>
+  </div>`;
 }
 
 function xpBar(xp, level) {
