@@ -2348,3 +2348,26 @@ body {
   opacity: 0.8;
   margin-left: 2px;
 }
+
+/* ─── Missions ─── */
+.screen-missions h2 { font-size: 9px; color: var(--text-accent); margin-bottom: 4px; }
+.missions-header { display: flex; justify-content: space-between; font-size: 6px; color: var(--text-dim); margin-bottom: 2px; }
+.rank-progress { font-size: 5px; color: var(--text-accent); margin-bottom: 6px; }
+.mission-list { display: flex; flex-direction: column; gap: 3px; }
+
+.mission-card {
+  display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 5px; transition: all 0.15s;
+}
+.mission-card.selected { border-color: var(--text-accent); background: rgba(0,255,200,0.06); }
+.mission-card.done { border-color: rgba(255,200,0,0.4); background: rgba(255,200,0,0.05); }
+.mission-card.claimed { opacity: 0.5; }
+
+.mission-icon { font-size: 12px; flex-shrink: 0; }
+.mission-info { flex: 1; }
+.mission-desc { font-size: 6px; display: block; }
+.mission-bar { width: 100%; height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin: 2px 0; overflow: hidden; }
+.mission-fill { height: 100%; background: var(--text-accent); border-radius: 2px; transition: width 0.3s; }
+.mission-progress { font-size: 5px; color: var(--text-dim); display: block; }
+.mission-reward { font-size: 5px; color: #ffcc00; flex-shrink: 0; text-align: right; }

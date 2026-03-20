@@ -6,7 +6,8 @@ import {
   TYPES, STAGES, STAGE_LABELS, ZONES, FOODS, ITEMS, STARTERS,
   xpForLevel, generateName, randomDNA, getTypeForDNA,
   BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType,
-  MOVES, MATERIALS, RECIPES
+  MOVES, MATERIALS, RECIPES,
+  getTrainerRank, getNextRank, RARITY_TIERS
 } from './data.js';
 import { renderCreatureSprite, renderCreatureBlinkSprite } from './pixel.js';
 import { SFX, initAudio, setMuted, isMuted, playMusic, stopMusic, getCurrentTrack } from './audio.js';
@@ -16,7 +17,9 @@ import {
   exportTeamCode, importTeamCode,
   addMaterials, canCraft, craftItem, checkMoveLearning,
   Creature, GameState, getAvailableZones, rollEncounter, getTrainingReward,
-  claimDailyReward
+  claimDailyReward,
+  rollExploreEvent, ensureDailyMissions, trackMission, getMissionStatus,
+  claimMissionReward, updateStreak, rollMaterialDrop
 } from './game.js';
 
 // ─── State ───
@@ -70,6 +73,7 @@ const MENU_ITEMS = [
   { id: 'shop',        icon: '🛒', label: 'Shop' },
   { id: 'crafting',    icon: '⚒️', label: 'Craft' },
   { id: 'materials',   icon: '📦', label: 'Items' },
+  { id: 'missions',    icon: '📋', label: 'Missions' },
   { id: 'achievements',icon: '🏆', label: 'Achieve' },
   { id: 'pvp',         icon: '⚔️', label: 'PvP' },
   { id: 'storage',     icon: '📦', label: 'Storage' },
@@ -189,7 +193,7 @@ function renderStarterSelect() {
     </div>`;
 }
 
-let homeActionIdx = 0; // 0=menu, 1=heal, 2=evolve
+let homeActionIdx = 0;
 
 function renderHome() {
   const c = game.active;
@@ -198,16 +202,23 @@ function renderHome() {
   const healItem = game.items.fullRestore > 0 ? `💉x${game.items.fullRestore}` :
                    game.items.healChip > 0    ? `💊x${game.items.healChip}` : null;
 
+  const rank = getTrainerRank(game.trainerXP || 0);
+  const streak = game.winStreak || 0;
+
   const actions = [
     { icon: '📋', label: 'Menu' },
     { icon: '💊', label: healItem ? `Heal ${healItem}` : 'No items', disabled: !healItem || c.stats.hp >= c.stats.maxHp },
-    ...(c.canEvolve ? [{ icon: '✨', label: 'Evolve!' }] : []),
+    ...(c.canEvolve ? [{ icon: '⬆️', label: 'Evolve!' }] : []),
   ];
+
+  ensureDailyMissions(game);
+  const missions = getMissionStatus(game);
+  const missionsLeft = missions.filter(m => !m.completed).length;
 
   return `
     <div class="screen-home">
       <div class="home-header">
-        <span class="creature-name">${c.isShiny ? '✨ ' : ''}${c.typeIcon} ${c.displayName}</span>
+        <span class="creature-name">${c.isShiny ? '✨' : ''}${c.typeIcon} ${c.displayName}</span>
         <span class="creature-level">Lv.${c.level}</span>
       </div>
       <div class="home-creature ${idleFrame === 1 ? 'bounce' : ''}">
@@ -226,16 +237,15 @@ function renderHome() {
       <div class="home-actions">
         ${actions.map((a, i) => `
           <div class="home-action ${homeActionIdx === i ? 'selected' : ''} ${a.disabled ? 'disabled' : ''}">
-            <span>${a.icon}</span>
-            <span>${a.label}</span>
+            <span>${a.icon}</span><span>${a.label}</span>
           </div>`).join('')}
       </div>
       <div class="home-footer">
-        <span>🪙 ${game.coins}</span>
-        <span>📦 ${Object.values(game.materials || {}).reduce((a,b)=>a+b,0)}</span>
-        <span>✨ ${game.totalShiny || 0}</span>
+        <span>${rank.icon} ${rank.rank}</span>
+        <span>${streak > 0 ? '🔥' + streak + ' ' : ''}🪙${game.coins}</span>
+        <span>${missionsLeft > 0 ? '📋' + missionsLeft : '✅'}</span>
       </div>
-      <div class="hint">◄► Choose • A = Confirm</div>
+      <div class="hint">◄► Choose · A Confirm</div>
     </div>`;
 }
 
@@ -844,6 +854,7 @@ function render() {
     // V3 screens
     case 'crafting': html = renderCrafting(); break;
     case 'materials': html = renderMaterials(); break;
+    case 'missions': html = renderMissions(); break;
     case 'swapBattle': html = renderSwapBattle(); break;
     case 'moveLearn': html = renderMoveLearn(); break;
   }
@@ -902,6 +913,7 @@ function handleInput(btn) {
     // V3 screens
     case 'crafting': handleCraftingInput(btn); break;
     case 'materials': handleMaterialsInput(btn); break;
+    case 'missions': handleMissionsInput(btn); break;
     case 'swapBattle': handleSwapBattleInput(btn); break;
     case 'moveLearn': handleMoveLearnInput(btn); break;
   }
@@ -1062,17 +1074,25 @@ function handleExploringInput(btn) {
   if (btn === 'a') {
     exploreSteps++;
     game.totalSteps++;
+    trackMission(game, 'steps');
     SFX.step();
 
-    // Hunger decreases over time
     if (game.active && exploreSteps % 5 === 0) {
       game.active.hunger = Math.max(0, game.active.hunger - 2);
+    }
+
+    // V4: Random explore events
+    const event = rollExploreEvent(game);
+    if (event && event.text) {
+      showMessage(`${event.text}\n${event.detail || ''}`);
+      game.save();
     }
 
     if (rollEncounter()) {
       const wild = generateWildCreature(exploreZone, game.active.level);
       SFX.encounter();
-      showMessage(`A wild ${wild.displayName} appeared!`, () => {
+      const rarityLabel = wild._rarity?.name !== 'Common' ? ` [${wild._rarity.name}]` : '';
+      showMessage(`A wild ${wild.displayName}${rarityLabel} appeared!${wild.isShiny ? '\n✨ IT\'S SHINY!' : ''}`, () => {
         startBattle(wild);
       });
     }
@@ -1208,29 +1228,29 @@ function handleBattleEnd() {
     const enemy = battle.enemy;
     const xpBoost = (game.xpBoosterBattles || 0) > 0;
     const baseXP = 15 + enemy.level * 5;
-    const xpGain = xpBoost ? Math.floor(baseXP * 1.5) : baseXP;
-    const coinGain = 5 + enemy.level * 2;
+    // V4: Streak bonus
+    const streakBonus = updateStreak(game, true);
+    const streakMult = streakBonus?.xpMult || 1;
+    const xpGain = Math.floor(baseXP * (xpBoost ? 1.5 : 1) * streakMult);
+    const coinGain = Math.floor((5 + enemy.level * 2) * (streakBonus?.coinMult || 1));
     if (xpBoost) game.xpBoosterBattles--;
 
     const leveled = game.active.addXP(xpGain);
     game.coins += coinGain;
     game.active.wins++;
     game.active.happiness = Math.min(100, game.active.happiness + 5);
+    // V4: Trainer XP
+    game.trainerXP = (game.trainerXP || 0) + 10 + enemy.level;
+    // V4: Mission tracking
+    trackMission(game, 'battles');
 
-    // V3: Material drops
+    // Material drops
     const drops = rollMaterialDrop(enemy, !!enemy._isBoss);
-    if (drops.length) {
-      addMaterials(game, drops);
-      battle.log.push(`🎁 Drops: ${drops.map(d => MATERIALS[d]?.icon || '📦').join(' ')}`);
-    }
+    if (drops.length) addMaterials(game, drops);
 
-    // V3: Shiny counter
-    if (enemy.isShiny) {
-      game.totalShiny = (game.totalShiny || 0) + 1;
-      battle.log.push(`✨ SHINY! (${game.totalShiny} total)`);
-    }
+    if (enemy.isShiny) game.totalShiny = (game.totalShiny || 0) + 1;
 
-    // V2: Boss reward
+    // Boss reward
     if (enemy._isBoss && enemy._zoneId) {
       if (!game.bossesDefeated) game.bossesDefeated = [];
       const firstTime = !game.bossesDefeated.includes(enemy._zoneId);
@@ -1240,28 +1260,29 @@ function handleBattleEnd() {
         if (bossData?.reward) {
           game.coins += bossData.reward.coins;
           if (bossData.reward.item) game.items[bossData.reward.item] = (game.items[bossData.reward.item] || 0) + 1;
-          const bossDrops = rollMaterialDrop(enemy, true);
-          addMaterials(game, bossDrops);
-          setTimeout(() => {
-            showMessage(`👑 BOSS DEFEATED!\n+${bossData.reward.coins} 🪙\n+1 ${ITEMS[bossData.reward.item]?.name || ''}\n🎁 ${bossDrops.map(d => MATERIALS[d]?.icon).join(' ')}`);
-          }, 800);
+          setTimeout(() => showMessage(`👑 BOSS DEFEATED!\n+${bossData.reward.coins} 🪙`), 800);
         }
       }
+      trackMission(game, 'bosses');
     }
 
-    // V3: Check move learning
+    // Move learning
     const newMoves = checkMoveLearning(game.active);
     if (newMoves.length) {
-      const msg = `📚 ${game.active.displayName} learned: ${newMoves.map(m => MOVES[m]?.name).join(', ')}!\nKeep or forget an old move?`;
-      showMessage(msg, () => {
+      showMessage(`📚 ${game.active.displayName} can learn: ${newMoves.map(m => MOVES[m]?.name).join(', ')}!`, () => {
         showMoveLearnScreen(game.active, newMoves);
       });
     }
 
     SFX.victory();
-    const xpMsg = xpBoost ? `+${xpGain} XP (BOOSTED!)` : `+${xpGain} XP`;
+    // Build reward message
+    let msg = `+${xpGain} XP  +${coinGain} 🪙`;
+    if (drops.length) msg += `\n🎁 ${drops.map(d => MATERIALS[d]?.icon || '📦').join(' ')}`;
+    if (streakBonus) msg += `\n${streakBonus.label} (x${streakBonus.xpMult} XP!)`;
+    if (enemy._rarity?.name && enemy._rarity.name !== 'Common') msg += `\n[${enemy._rarity.name} bonus!]`;
+
     setTimeout(() => {
-      showMessage(`${xpMsg}, +${coinGain} 🪙!`);
+      showMessage(msg);
       if (leveled) {
         SFX.levelUp();
         showMessage(`${game.active.displayName} leveled up to Lv.${game.active.level}!`);
@@ -1272,7 +1293,10 @@ function handleBattleEnd() {
   } else if (battle.winner === 'capture') {
     const enemy = battle.enemy;
     enemy.fullHeal();
-    if (enemy.isShiny) { game.totalShiny = (game.totalShiny || 0) + 1; }
+    if (enemy.isShiny) game.totalShiny = (game.totalShiny || 0) + 1;
+    trackMission(game, 'catches');
+    game.totalCatches = (game.totalCatches || 0) + 1;
+    game.trainerXP = (game.trainerXP || 0) + 25;
     if (game.addToTeam(enemy)) {
       showMessage(enemy.isShiny ? `✨ SHINY ${enemy.displayName} captured!` : `${enemy.displayName} joined your team!`);
     } else {
@@ -1280,15 +1304,13 @@ function handleBattleEnd() {
       showMessage(`${enemy.displayName} sent to storage!`);
     }
     SFX.capture();
+  } else if (battle.winner === 'run') {
+    // no penalty
   } else {
     game.active.losses++;
     game.active.happiness = Math.max(0, game.active.happiness - 10);
+    updateStreak(game, false);
     SFX.defeat();
-    // Check if player has other alive Nots to swap in
-    const aliveOthers = game.team.filter(c => c.isAlive && c !== game.active);
-    if (aliveOthers.length === 0) {
-      battle.log.push(`💀 All Nots down!`);
-    }
   }
 }
 
@@ -2468,5 +2490,61 @@ function handleMoveLearnInput(btn) {
     render();
   }
   else if (btn === 'b') { SFX.menuBack(); pendingLearnCreature = null; pendingLearnMoves = []; goBack(); }
+  render();
+}
+
+// ─── V4: Missions Screen ───
+let missionIdx = 0;
+
+function renderMissions() {
+  ensureDailyMissions(game);
+  const missions = getMissionStatus(game);
+  const rank = getTrainerRank(game.trainerXP || 0);
+  const nextRank = getNextRank(game.trainerXP || 0);
+  const streak = game.winStreak || 0;
+  const bestStreak = game.bestStreak || 0;
+
+  return `
+    <div class="screen-missions">
+      <h2>📋 Daily Missions</h2>
+      <div class="missions-header">
+        <span>${rank.icon} ${rank.rank}</span>
+        <span>🔥 Streak: ${streak} (Best: ${bestStreak})</span>
+      </div>
+      ${nextRank ? `<div class="rank-progress">Next: ${nextRank.icon} ${nextRank.rank} — ${game.trainerXP || 0}/${nextRank.minXP} XP</div>` : '<div class="rank-progress">👑 MAX RANK!</div>'}
+      <div class="mission-list">
+        ${missions.map((m, i) => {
+          const pct = Math.min(100, Math.floor((m.progress / m.target) * 100));
+          const claimed = game.missionProgress?.['claimed_' + m.id];
+          return `<div class="mission-card ${missionIdx === i ? 'selected' : ''} ${m.completed ? (claimed ? 'claimed' : 'done') : ''}">
+            <span class="mission-icon">${m.icon}</span>
+            <div class="mission-info">
+              <span class="mission-desc">${m.desc}</span>
+              <div class="mission-bar"><div class="mission-fill" style="width:${pct}%"></div></div>
+              <span class="mission-progress">${m.progress}/${m.target}</span>
+            </div>
+            <span class="mission-reward">${claimed ? '✅' : m.completed ? '🎁' : '🔒'} +${m.reward.coins}🪙</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="hint">▲▼ Select · A = Claim · B = Back</div>
+    </div>`;
+}
+
+function handleMissionsInput(btn) {
+  const missions = getMissionStatus(game);
+  if (btn === 'up') { missionIdx = Math.max(0, missionIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { missionIdx = Math.min(missions.length - 1, missionIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const result = claimMissionReward(game, missionIdx);
+    if (result) {
+      SFX.capture();
+      game.save();
+      showMessage(`🎁 Mission Complete!\n+${result.reward.coins} 🪙\n+${result.reward.qty || 1} ${MATERIALS[result.reward.mat]?.icon || ''}`);
+    } else {
+      SFX.menuBack();
+    }
+  }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
   render();
 }

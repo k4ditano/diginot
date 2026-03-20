@@ -477,3 +477,110 @@ export const RECIPES = {
   voidStone:   { name: 'Void Stone',    icon: '🌑', materials: { voidDust: 10, notEssence: 1 }, desc: 'Force evolve Void type' },
   luxStone:    { name: 'Lux Stone',     icon: '✨', materials: { luxPrism: 10, notEssence: 1 }, desc: 'Force evolve Lux type' },
 };
+
+// ═══════════════════════════════════════════
+// V4 — Engagement Systems
+// ═══════════════════════════════════════════
+
+// Daily Missions: 3 random objectives per day
+export const MISSION_TEMPLATES = [
+  { id: 'battle_3',   desc: 'Win 3 battles',          icon: '⚔️', target: 3, type: 'battles', reward: { coins: 80, mat: 'rawPixel', qty: 3 } },
+  { id: 'battle_7',   desc: 'Win 7 battles',          icon: '⚔️', target: 7, type: 'battles', reward: { coins: 200, mat: 'dataFragment', qty: 2 } },
+  { id: 'catch_1',    desc: 'Catch a wild Not',        icon: '📡', target: 1, type: 'catches', reward: { coins: 60, mat: 'rawPixel', qty: 2 } },
+  { id: 'catch_3',    desc: 'Catch 3 Nots',            icon: '📡', target: 3, type: 'catches', reward: { coins: 150, mat: 'dataFragment', qty: 3 } },
+  { id: 'steps_50',   desc: 'Walk 50 steps',           icon: '👟', target: 50, type: 'steps',  reward: { coins: 50, mat: 'rawPixel', qty: 2 } },
+  { id: 'steps_150',  desc: 'Walk 150 steps',          icon: '🧭', target: 150, type: 'steps', reward: { coins: 120, mat: 'rawPixel', qty: 5 } },
+  { id: 'train_2',    desc: 'Train 2 times',           icon: '🏋️', target: 2, type: 'trains', reward: { coins: 70, mat: 'dataFragment', qty: 1 } },
+  { id: 'feed_3',     desc: 'Feed your Not 3 times',   icon: '🍖', target: 3, type: 'feeds',  reward: { coins: 40, mat: 'rawPixel', qty: 1 } },
+  { id: 'craft_1',    desc: 'Craft an item',           icon: '⚒️', target: 1, type: 'crafts', reward: { coins: 100, mat: 'notEssence', qty: 1 } },
+  { id: 'crit_1',     desc: 'Land a critical hit',     icon: '💥', target: 1, type: 'crits',  reward: { coins: 60, mat: 'rawPixel', qty: 2 } },
+  { id: 'super_3',    desc: 'Land 3 super effective',   icon: '✨', target: 3, type: 'supers', reward: { coins: 90, mat: 'dataFragment', qty: 1 } },
+  { id: 'heal_2',     desc: 'Use 2 healing items',     icon: '💊', target: 2, type: 'heals',  reward: { coins: 50, mat: 'rawPixel', qty: 2 } },
+  { id: 'shiny_1',    desc: 'Find a shiny Not',        icon: '✨', target: 1, type: 'shinies', reward: { coins: 500, mat: 'chromaGem', qty: 2 } },
+  { id: 'boss_1',     desc: 'Defeat a zone boss',      icon: '👹', target: 1, type: 'bosses', reward: { coins: 300, mat: 'ancientChip', qty: 1 } },
+];
+
+// Trainer Ranks (prestige system)
+export const TRAINER_RANKS = [
+  { rank: 'Newbie',       icon: '🟤', minXP: 0 },
+  { rank: 'Rookie',       icon: '⚪', minXP: 100 },
+  { rank: 'Tamer',        icon: '🟡', minXP: 500 },
+  { rank: 'Handler',      icon: '🟠', minXP: 1500 },
+  { rank: 'Expert',       icon: '🔴', minXP: 4000 },
+  { rank: 'Master',       icon: '🟣', minXP: 10000 },
+  { rank: 'Champion',     icon: '🔵', minXP: 25000 },
+  { rank: 'Legend',        icon: '🟢', minXP: 60000 },
+  { rank: 'Mythic',       icon: '⭐', minXP: 150000 },
+  { rank: 'Digital God',  icon: '👑', minXP: 500000 },
+];
+
+export function getTrainerRank(xp) {
+  let current = TRAINER_RANKS[0];
+  for (const r of TRAINER_RANKS) {
+    if (xp >= r.minXP) current = r;
+  }
+  return current;
+}
+
+export function getNextRank(xp) {
+  for (let i = 0; i < TRAINER_RANKS.length; i++) {
+    if (xp < TRAINER_RANKS[i].minXP) return TRAINER_RANKS[i];
+  }
+  return null; // max rank
+}
+
+// Wild encounter rarity tiers
+export const RARITY_TIERS = [
+  { name: 'Common',     color: '#aaaaaa', weight: 60, levelBonus: 0, statMult: 1.0 },
+  { name: 'Uncommon',   color: '#44cc44', weight: 25, levelBonus: 1, statMult: 1.1 },
+  { name: 'Rare',       color: '#4488ff', weight: 10, levelBonus: 2, statMult: 1.2 },
+  { name: 'Epic',       color: '#cc44ff', weight: 4,  levelBonus: 3, statMult: 1.35 },
+  { name: 'Legendary',  color: '#ffaa00', weight: 1,  levelBonus: 5, statMult: 1.5 },
+];
+
+export function rollRarity() {
+  const total = RARITY_TIERS.reduce((s, r) => s + r.weight, 0);
+  let roll = Math.random() * total;
+  for (const tier of RARITY_TIERS) {
+    roll -= tier.weight;
+    if (roll <= 0) return tier;
+  }
+  return RARITY_TIERS[0];
+}
+
+// Battle streak bonuses
+export const STREAK_BONUSES = [
+  { streak: 3,  label: '🔥 Hot Streak!',    xpMult: 1.25, coinMult: 1.25 },
+  { streak: 5,  label: '🔥🔥 On Fire!',     xpMult: 1.5,  coinMult: 1.5 },
+  { streak: 10, label: '🔥🔥🔥 Unstoppable!', xpMult: 2.0,  coinMult: 2.0 },
+  { streak: 20, label: '💀 GODMODE',          xpMult: 3.0,  coinMult: 3.0 },
+];
+
+export function getStreakBonus(streak) {
+  let best = null;
+  for (const s of STREAK_BONUSES) {
+    if (streak >= s.streak) best = s;
+  }
+  return best;
+}
+
+// Explore events: random discoveries while exploring
+export const EXPLORE_EVENTS = [
+  { id: 'coins',    chance: 0.15, text: '💰 Found coins on the ground!',     apply: (g) => { const c = 10 + Math.floor(Math.random()*30); g.coins += c; return `+${c} coins!`; } },
+  { id: 'material', chance: 0.12, text: '📦 Discovered materials!',           apply: (g) => { const drops = ['rawPixel','dataFragment']; const d = drops[Math.floor(Math.random()*drops.length)]; g.materials[d] = (g.materials[d]||0)+1; return `+1 ${MATERIALS[d].icon}`; } },
+  { id: 'heal',     chance: 0.08, text: '💚 Found a healing spring!',         apply: (g) => { if(g.active){g.active.heal(Math.floor(g.active.stats.maxHp*0.3));} return 'HP restored!'; } },
+  { id: 'trap',     chance: 0.05, text: '📡 Found a trap on the ground!',     apply: (g) => { g.items.dataTrap=(g.items.dataTrap||0)+1; return '+1 Data Trap!'; } },
+  { id: 'xp',       chance: 0.10, text: '⭐ Training aura surrounds you!',    apply: (g) => { if(g.active){g.active.addXP(20);} return '+20 XP!'; } },
+  { id: 'rare_mat', chance: 0.03, text: '✨ Rare crystal formation!',         apply: (g) => { const r=['chromaGem','notEssence','ancientChip']; const d=r[Math.floor(Math.random()*r.length)]; g.materials[d]=(g.materials[d]||0)+1; return `+1 ${MATERIALS[d].icon} ${MATERIALS[d].name}!`; } },
+  { id: 'nothing',  chance: 0.25, text: null, apply: () => null },
+];
+
+// Pick 3 random daily missions based on day seed
+export function generateDailyMissions(daySeed) {
+  const shuffled = [...MISSION_TEMPLATES].sort((a, b) => {
+    const ha = ((daySeed * 31 + a.id.charCodeAt(0) * 17) | 0) & 0xFFFF;
+    const hb = ((daySeed * 31 + b.id.charCodeAt(0) * 17) | 0) & 0xFFFF;
+    return ha - hb;
+  });
+  return shuffled.slice(0, 3);
+}

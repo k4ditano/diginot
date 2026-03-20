@@ -7,7 +7,8 @@ import {
   ZONES, FOODS, ITEMS, STARTERS,
   generateName, generateStats, xpForLevel, hashDNA, randomDNA, getTypeForDNA,
   BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType,
-  LEARNABLE_MOVES, MATERIALS, DROP_TABLE, BOSS_DROPS, RECIPES, SHINY_RATE, isShiny
+  LEARNABLE_MOVES, MATERIALS, DROP_TABLE, BOSS_DROPS, RECIPES, SHINY_RATE, isShiny,
+  rollRarity, EXPLORE_EVENTS, generateDailyMissions, getStreakBonus, getTrainerRank
 } from './data.js';
 
 // ─── Creature Class ───
@@ -286,9 +287,10 @@ export function generateWildCreature(zone, playerLevel, forceShiny = false) {
   const dna = randomDNA();
   const types = zone.types;
   const type = types[Math.floor(Math.random() * types.length)];
+  const rarity = rollRarity();
   const minLvl = Math.max(1, zone.minLevel);
   const maxLvl = Math.min(playerLevel + 3, minLvl + 10);
-  const level = Math.floor(Math.random() * (maxLvl - minLvl + 1)) + minLvl;
+  const level = Math.floor(Math.random() * (maxLvl - minLvl + 1)) + minLvl + rarity.levelBonus;
 
   let stage = 'bit';
   for (const s of STAGES) {
@@ -296,7 +298,20 @@ export function generateWildCreature(zone, playerLevel, forceShiny = false) {
   }
 
   const isShinyFlag = forceShiny || Math.random() < SHINY_RATE;
-  return new Creature({ dna, type, level, stage, isShinyFlag });
+  const creature = new Creature({ dna, type, level, stage, isShinyFlag });
+  creature._rarity = rarity;
+  // Apply stat multiplier from rarity
+  if (rarity.statMult > 1) {
+    const m = rarity.statMult;
+    creature.stats.maxHp = Math.floor(creature.stats.maxHp * m);
+    creature.stats.hp = creature.stats.maxHp;
+    creature.stats.atk = Math.floor(creature.stats.atk * m);
+    creature.stats.def = Math.floor(creature.stats.def * m);
+    creature.stats.spAtk = Math.floor(creature.stats.spAtk * m);
+    creature.stats.spDef = Math.floor(creature.stats.spDef * m);
+    creature.stats.spd = Math.floor(creature.stats.spd * m);
+  }
+  return creature;
 }
 
 // ─── Battle Engine ───
@@ -635,6 +650,19 @@ GameState.prototype.save = function() {
   if (!this.materials) this.materials = {};
   if (!this.xpBoosterBattles) this.xpBoosterBattles = 0;
   if (!this.totalShiny) this.totalShiny = 0;
+  // V4
+  if (!this.trainerXP) this.trainerXP = 0;
+  if (!this.winStreak) this.winStreak = 0;
+  if (!this.bestStreak) this.bestStreak = 0;
+  if (!this.dailyMissions) this.dailyMissions = null;
+  if (!this.missionProgress) this.missionProgress = {};
+  if (!this.missionDate) this.missionDate = null;
+  if (!this.totalTrains) this.totalTrains = 0;
+  if (!this.totalFeeds) this.totalFeeds = 0;
+  if (!this.totalCrafts) this.totalCrafts = 0;
+  if (!this.totalCatches) this.totalCatches = 0;
+  if (!this.sessionCrits) this.sessionCrits = 0;
+  if (!this.sessionSupers) this.sessionSupers = 0;
 
   const data = {
     team: this.team.map(c => c.serialize()),
@@ -653,6 +681,17 @@ GameState.prototype.save = function() {
     materials: this.materials,
     xpBoosterBattles: this.xpBoosterBattles,
     totalShiny: this.totalShiny,
+    // V4
+    trainerXP: this.trainerXP,
+    winStreak: this.winStreak,
+    bestStreak: this.bestStreak,
+    dailyMissions: this.dailyMissions,
+    missionProgress: this.missionProgress,
+    missionDate: this.missionDate,
+    totalTrains: this.totalTrains,
+    totalFeeds: this.totalFeeds,
+    totalCrafts: this.totalCrafts,
+    totalCatches: this.totalCatches,
   };
   localStorage.setItem('diginot_save', JSON.stringify(data));
 };
@@ -686,6 +725,17 @@ GameState.prototype.load = function() {
     this.materials = data.materials || {};
     this.xpBoosterBattles = data.xpBoosterBattles || 0;
     this.totalShiny = data.totalShiny || 0;
+    // V4
+    this.trainerXP = data.trainerXP || 0;
+    this.winStreak = data.winStreak || 0;
+    this.bestStreak = data.bestStreak || 0;
+    this.dailyMissions = data.dailyMissions || null;
+    this.missionProgress = data.missionProgress || {};
+    this.missionDate = data.missionDate || null;
+    this.totalTrains = data.totalTrains || 0;
+    this.totalFeeds = data.totalFeeds || 0;
+    this.totalCrafts = data.totalCrafts || 0;
+    this.totalCatches = data.totalCatches || 0;
     return true;
   } catch { return false; }
 };
@@ -881,4 +931,68 @@ export function craftItem(gameState, recipeId) {
 export function checkMoveLearning(creature) {
   // Returns array of new move IDs to learn at current level
   return creature.getNewMoves();
+}
+
+// ─── V4: Explore Events ───
+export function rollExploreEvent(gameState) {
+  for (const ev of EXPLORE_EVENTS) {
+    if (ev.text && Math.random() < ev.chance) {
+      const detail = ev.apply(gameState);
+      return { text: ev.text, detail };
+    }
+  }
+  return null; // nothing happened
+}
+
+// ─── V4: Mission System ───
+export function ensureDailyMissions(gameState) {
+  const today = new Date().toDateString();
+  if (gameState.missionDate !== today) {
+    const seed = new Date().getFullYear() * 10000 + (new Date().getMonth()+1) * 100 + new Date().getDate();
+    gameState.dailyMissions = generateDailyMissions(seed);
+    gameState.missionProgress = {};
+    gameState.missionDate = today;
+    gameState.sessionCrits = 0;
+    gameState.sessionSupers = 0;
+  }
+}
+
+export function trackMission(gameState, type, amount = 1) {
+  if (!gameState.missionProgress) gameState.missionProgress = {};
+  gameState.missionProgress[type] = (gameState.missionProgress[type] || 0) + amount;
+}
+
+export function getMissionStatus(gameState) {
+  ensureDailyMissions(gameState);
+  return (gameState.dailyMissions || []).map(m => ({
+    ...m,
+    progress: gameState.missionProgress?.[m.type] || 0,
+    completed: (gameState.missionProgress?.[m.type] || 0) >= m.target,
+  }));
+}
+
+export function claimMissionReward(gameState, idx) {
+  const missions = getMissionStatus(gameState);
+  const m = missions[idx];
+  if (!m || !m.completed) return null;
+  const claimKey = `claimed_${m.id}`;
+  if (gameState.missionProgress[claimKey]) return null; // already claimed
+  gameState.missionProgress[claimKey] = true;
+  gameState.coins += m.reward.coins;
+  if (m.reward.mat) {
+    gameState.materials[m.reward.mat] = (gameState.materials[m.reward.mat] || 0) + (m.reward.qty || 1);
+  }
+  gameState.trainerXP = (gameState.trainerXP || 0) + 50;
+  return m;
+}
+
+// ─── V4: Streak ───
+export function updateStreak(gameState, won) {
+  if (won) {
+    gameState.winStreak = (gameState.winStreak || 0) + 1;
+    if (gameState.winStreak > (gameState.bestStreak || 0)) gameState.bestStreak = gameState.winStreak;
+  } else {
+    gameState.winStreak = 0;
+  }
+  return getStreakBonus(gameState.winStreak);
 }
