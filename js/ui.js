@@ -12,6 +12,10 @@ import {
 import { renderCreatureSprite, renderCreatureBlinkSprite } from './pixel.js';
 import { SFX, initAudio, setMuted, isMuted, playMusic, stopMusic, getCurrentTrack } from './audio.js';
 import {
+  generateZoneMap, getViewport, isWalkable, getTileInfo, TILE, VIEW_W, VIEW_H, MAP_W, MAP_H,
+  generateNPCTeam
+} from './map.js';
+import {
   BattleEngine, generateWildCreature, generateBoss, performFusion,
   checkAchievements, checkDailyLogin, simulatePvPBattle,
   exportTeamCode, importTeamCode,
@@ -33,6 +37,9 @@ let battleState = 'choose'; // choose, playerAttack, enemyAttack, result
 let battleActionIdx = 0; // 0-3 = moves, 4 = trap, 5 = swap, 6 = run
 let exploreZone = null;
 let exploreSteps = 0;
+let zoneMap = null;
+let playerX = 0;
+let playerY = 0;
 let idleFrame = 0;
 let idleTimer = null;
 let blinkTimer = null;
@@ -346,24 +353,67 @@ function renderExploreSelect() {
 }
 
 function renderExploring() {
+  if (!zoneMap || !exploreZone) return '<div class="empty">No zone!</div>';
+  const vp = getViewport(zoneMap, playerX, playerY);
+  const theme = zoneMap.theme;
+
+  const tilesHTML = vp.tiles.map(row =>
+    row.map(cell => {
+      const [emoji, bg] = getTileInfo(cell.tile);
+      let cls = 'map-tile';
+      let content = emoji;
+      let tileBg = bg;
+
+      if (cell.isPlayer) {
+        content = ''; // player sprite rendered on top
+        cls += ' map-player';
+      }
+
+      // Opened chest? Show as path
+      if (cell.tile === TILE.CHEST && zoneMap.chestsOpened[`${cell.mx},${cell.my}`]) {
+        content = '';
+        tileBg = getTileInfo(TILE.PATH)[1];
+      }
+      // Defeated NPC? Show as path
+      if (cell.tile === TILE.NPC && zoneMap.npcsDefeated[`${cell.mx},${cell.my}`]) {
+        content = '';
+        tileBg = getTileInfo(TILE.PATH)[1];
+      }
+      // Defeated boss?
+      if (cell.tile === TILE.BOSS && zoneMap.bossDefeated) {
+        content = '';
+        tileBg = getTileInfo(TILE.PATH)[1];
+      }
+
+      // Theme colors
+      if (cell.tile === TILE.PATH) tileBg = theme.floorColor || bg;
+      if (cell.tile === TILE.GRASS) tileBg = theme.grassColor || bg;
+
+      return `<div class="${cls}" style="background:${tileBg}">${content}</div>`;
+    }).join('')
+  ).join('');
+
+  const currentTile = zoneMap.grid[playerY]?.[playerX];
+  let tileHint = '';
+  if (currentTile === TILE.GRASS) tileHint = '🌿 Tall grass...';
+  else if (currentTile === TILE.EXIT) tileHint = '▶ Exit zone (A)';
+  else if (currentTile === TILE.ENTRY) tileHint = '◀ Entrance';
+
   return `
     <div class="screen-exploring">
-      <div class="explore-header">
-        <span>${exploreZone?.icon} ${exploreZone?.name}</span>
-        <span>Steps: ${exploreSteps}</span>
+      <div class="explore-hud">
+        <span>${exploreZone.icon} ${exploreZone.name}</span>
+        <span>👟${exploreSteps}</span>
+        <span>${game.active.typeIcon} Lv.${game.active.level}</span>
       </div>
-      <div class="radar-container">
-        <div class="radar">
-          <div class="radar-sweep"></div>
-          <div class="radar-center">
-            <img src="${renderCreatureSprite(game.active.dna, game.active.type, game.active.stage, 2)}" draggable="false">
-          </div>
-          ${Array.from({length: 3}, (_, i) => `<div class="radar-ring" style="width:${(i+1)*33}%;height:${(i+1)*33}%"></div>`).join('')}
-          ${Math.random() < 0.3 ? `<div class="radar-blip" style="top:${20+Math.random()*60}%;left:${20+Math.random()*60}%"></div>` : ''}
+      <div class="map-viewport" style="grid-template-columns:repeat(${VIEW_W},1fr);grid-template-rows:repeat(${VIEW_H},1fr);">
+        ${tilesHTML}
+        <div class="map-player-sprite" style="grid-column:${playerX - vp.startX + 1};grid-row:${playerY - vp.startY + 1};">
+          <img src="${renderCreatureSprite(game.active.dna, game.active.type, game.active.stage, 2, game.active.isShiny)}" draggable="false">
         </div>
       </div>
-      <div class="explore-status">Searching for wild Nots...</div>
-      <div class="hint">A = Step forward • B = Leave zone</div>
+      <div class="explore-hint">${tileHint}</div>
+      <div class="hint">D-pad = Walk · B = Leave</div>
     </div>`;
 }
 
@@ -1052,57 +1102,94 @@ function handleExploreSelectInput(btn) {
   else if (btn === 'a') {
     exploreZone = zones[subIdx];
     exploreSteps = 0;
-    SFX.menuSelect();
+    zoneMap = generateZoneMap(exploreZone.id);
+    playerX = zoneMap.entry.x;
+    playerY = zoneMap.entry.y;
+    playMusic('explore');
     setScreen('exploring');
-  }
-  else if (btn === 'right') {
-    // Boss battle!
-    const zone = zones[subIdx];
-    if (BOSSES[zone.id]) {
-      SFX.bossAppear();
-      const boss = generateBoss(zone.id);
-      showMessage(`👹 ZONE BOSS: ${boss.displayName} Lv.${boss.level}!\nPrepare for battle!`, () => {
-        startBattle(boss);
-      });
-    }
   }
   else if (btn === 'b') { SFX.menuBack(); goBack(); }
   render();
 }
 
 function handleExploringInput(btn) {
+  if (!zoneMap) return;
+
+  let nx = playerX, ny = playerY;
+  if (btn === 'up')    ny--;
+  if (btn === 'down')  ny++;
+  if (btn === 'left')  nx--;
+  if (btn === 'right') nx++;
+
+  if (['up','down','left','right'].includes(btn) && nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H) {
+    const targetTile = zoneMap.grid[ny][nx];
+    const key = `${nx},${ny}`;
+    const cleared = (targetTile === TILE.CHEST && zoneMap.chestsOpened[key]) ||
+                    (targetTile === TILE.NPC && zoneMap.npcsDefeated[key]) ||
+                    (targetTile === TILE.BOSS && zoneMap.bossDefeated);
+
+    if (isWalkable(targetTile) || cleared) {
+      playerX = nx; playerY = ny;
+      exploreSteps++; game.totalSteps++;
+      trackMission(game, 'steps');
+      SFX.step();
+
+      if (game.active && exploreSteps % 8 === 0) game.active.hunger = Math.max(0, game.active.hunger - 1);
+
+      // GRASS encounter
+      if (targetTile === TILE.GRASS && Math.random() < 0.2) {
+        const wild = generateWildCreature(exploreZone, game.active.level);
+        SFX.encounter();
+        const rl = wild._rarity?.name !== 'Common' ? ` [${wild._rarity.name}]` : '';
+        showMessage(`A wild ${wild.displayName}${rl} appeared!${wild.isShiny ? '\n✨ SHINY!' : ''}`, () => startBattle(wild));
+      }
+
+      // CHEST
+      if (targetTile === TILE.CHEST && !zoneMap.chestsOpened[key]) {
+        zoneMap.chestsOpened[key] = true; SFX.capture();
+        const rw = [
+          () => { game.coins += 50; return '+50 coins!'; },
+          () => { game.items.dataTrap = (game.items.dataTrap||0)+1; return '+1 Data Trap!'; },
+          () => { game.items.healChip = (game.items.healChip||0)+1; return '+1 Heal Chip!'; },
+          () => { game.materials.dataFragment=(game.materials.dataFragment||0)+2; return '+2 Data Fragments!'; },
+          () => { game.materials.notEssence=(game.materials.notEssence||0)+1; return '+1 Not Essence!'; },
+        ];
+        showMessage(`📦 Chest!\n${rw[Math.floor(Math.random()*rw.length)]()}`);
+        game.save();
+      }
+
+      // NPC
+      if (targetTile === TILE.NPC && !zoneMap.npcsDefeated[key]) {
+        zoneMap.npcsDefeated[key] = true; SFX.encounter();
+        const npc = generateWildCreature(exploreZone, game.active.level + Math.floor(Math.random()*3));
+        npc.nickname = 'Trainer ' + npc.nickname;
+        showMessage(`🧑‍💻 Trainer battle!\n${npc.displayName} Lv.${npc.level}`, () => startBattle(npc));
+      }
+
+      // BOSS
+      if (targetTile === TILE.BOSS && !zoneMap.bossDefeated) {
+        const boss = generateBoss(exploreZone.id);
+        if (boss) { SFX.bossAppear(); showMessage(`👹 BOSS: ${boss.displayName}!`, () => startBattle(boss)); }
+      }
+
+      // Random event on path
+      if ((targetTile === TILE.PATH || targetTile === TILE.ENTRY) && Math.random() < 0.06) {
+        const ev = rollExploreEvent(game);
+        if (ev?.text) { showMessage(`${ev.text}\n${ev.detail||''}`); game.save(); }
+      }
+    }
+    render(); return;
+  }
+
   if (btn === 'a') {
-    exploreSteps++;
-    game.totalSteps++;
-    trackMission(game, 'steps');
-    SFX.step();
-
-    if (game.active && exploreSteps % 5 === 0) {
-      game.active.hunger = Math.max(0, game.active.hunger - 2);
+    const tile = zoneMap.grid[playerY]?.[playerX];
+    if (tile === TILE.EXIT) {
+      SFX.menuSelect();
+      showMessage(`Left ${exploreZone.name}.\n👟 ${exploreSteps} steps.`);
+      game.save(); setScreen('explore');
     }
-
-    // V4: Random explore events
-    const event = rollExploreEvent(game);
-    if (event && event.text) {
-      showMessage(`${event.text}\n${event.detail || ''}`);
-      game.save();
-    }
-
-    if (rollEncounter()) {
-      const wild = generateWildCreature(exploreZone, game.active.level);
-      SFX.encounter();
-      const rarityLabel = wild._rarity?.name !== 'Common' ? ` [${wild._rarity.name}]` : '';
-      showMessage(`A wild ${wild.displayName}${rarityLabel} appeared!${wild.isShiny ? '\n✨ IT\'S SHINY!' : ''}`, () => {
-        startBattle(wild);
-      });
-    }
-    render();
   }
-  else if (btn === 'b') {
-    SFX.menuBack();
-    game.save();
-    setScreen('explore');
-  }
+  if (btn === 'b') { SFX.menuBack(); game.save(); setScreen('explore'); }
 }
 
 function startBattle(enemy) {

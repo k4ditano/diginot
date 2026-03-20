@@ -2371,3 +2371,72 @@ body {
 .mission-fill { height: 100%; background: var(--text-accent); border-radius: 2px; transition: width 0.3s; }
 .mission-progress { font-size: 5px; color: var(--text-dim); display: block; }
 .mission-reward { font-size: 5px; color: #ffcc00; flex-shrink: 0; text-align: right; }
+
+/* ─── Zone Map ─── */
+.screen-exploring {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 2px;
+}
+
+.explore-hud {
+  display: flex;
+  justify-content: space-between;
+  font-size: 6px;
+  color: var(--text-primary);
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.map-viewport {
+  display: grid;
+  flex: 1;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.map-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  color: rgba(255,255,255,0.5);
+  border: 0.5px solid rgba(255,255,255,0.02);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.map-tile.map-player {
+  position: relative;
+  z-index: 1;
+}
+
+.map-player-sprite {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.map-player-sprite img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  object-fit: contain;
+  filter: drop-shadow(0 0 3px rgba(0,255,200,0.4));
+}
+
+.explore-hint {
+  font-size: 6px;
+  color: var(--text-accent);
+  text-align: center;
+  min-height: 10px;
+  flex-shrink: 0;
+}
