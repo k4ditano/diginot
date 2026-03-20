@@ -189,15 +189,26 @@ function renderStarterSelect() {
     </div>`;
 }
 
+let homeActionIdx = 0; // 0=menu, 1=heal, 2=evolve
+
 function renderHome() {
   const c = game.active;
   if (!c) return '<div class="empty">No creature!</div>';
+
+  const healItem = game.items.fullRestore > 0 ? `💉x${game.items.fullRestore}` :
+                   game.items.healChip > 0    ? `💊x${game.items.healChip}` : null;
+
+  const actions = [
+    { icon: '📋', label: 'Menu' },
+    { icon: '💊', label: healItem ? `Heal ${healItem}` : 'No items', disabled: !healItem || c.stats.hp >= c.stats.maxHp },
+    ...(c.canEvolve ? [{ icon: '✨', label: 'Evolve!' }] : []),
+  ];
+
   return `
     <div class="screen-home">
       <div class="home-header">
         <span class="creature-name">${c.isShiny ? '✨ ' : ''}${c.typeIcon} ${c.displayName}</span>
         <span class="creature-level">Lv.${c.level}</span>
-        ${c.isShiny ? '<span class="shiny-badge">✨ SHINY</span>' : ''}
       </div>
       <div class="home-creature ${idleFrame === 1 ? 'bounce' : ''}">
         ${creatureImg(c, 5, 'idle-sprite')}
@@ -206,27 +217,25 @@ function renderHome() {
         <div class="bar-row">
           <span class="bar-label">HP</span>
           ${hpBar(c.stats.hp, c.stats.maxHp)}
-          ${c.happiness >= 70 && c.hunger >= 50 && c.stats.hp < c.stats.maxHp ? '<span class="regen-dot" title="Recovering">💚</span>' : ''}
+          ${c.happiness >= 70 && c.hunger >= 50 && c.stats.hp < c.stats.maxHp ? '<span class="regen-dot">💚</span>' : ''}
         </div>
         <div class="bar-row"><span class="bar-label">XP</span>${xpBar(c.xp, c.level)}</div>
         <div class="bar-row"><span class="bar-label">😊</span><div class="stat-bar"><div class="stat-fill happy" style="width:${c.happiness}%"></div></div></div>
         <div class="bar-row"><span class="bar-label">🍖</span><div class="stat-bar"><div class="stat-fill hunger" style="width:${c.hunger}%"></div></div></div>
       </div>
-      <div class="home-quick-actions">
-        <button class="quick-btn heal-btn" id="heal-btn">
-          💊 Heal
-          <span class="item-count">
-            ${game.items.fullRestore > 0 ? `💉x${game.items.fullRestore}` : game.items.healChip > 0 ? `💊x${game.items.healChip}` : '❌'}
-          </span>
-        </button>
-        ${game.materials?.notEssence ? `<button class="quick-btn boost-btn" id="boost-btn">✨ Boost XP (x${game.materials.notEssence})</button>` : ''}
+      <div class="home-actions">
+        ${actions.map((a, i) => `
+          <div class="home-action ${homeActionIdx === i ? 'selected' : ''} ${a.disabled ? 'disabled' : ''}">
+            <span>${a.icon}</span>
+            <span>${a.label}</span>
+          </div>`).join('')}
       </div>
       <div class="home-footer">
         <span>🪙 ${game.coins}</span>
-        <span>📦 ${Object.values(game.materials || {}).reduce((a, b) => a + b, 0)} mats</span>
-        <span>✨ ${game.totalShiny || 0} shinies</span>
+        <span>📦 ${Object.values(game.materials || {}).reduce((a,b)=>a+b,0)}</span>
+        <span>✨ ${game.totalShiny || 0}</span>
       </div>
-      <div class="hint">A = Menu</div>
+      <div class="hint">◄► Choose • A = Confirm</div>
     </div>`;
 }
 
@@ -840,42 +849,6 @@ function render() {
     if (receiveBtn) receiveBtn.addEventListener('click', handleReceive);
   }
   if (currentScreen === 'home') {
-    const healBtn = document.getElementById('heal-btn');
-    if (healBtn) healBtn.addEventListener('click', () => {
-      if (!game.active) return;
-      const c = game.active;
-      if (c.stats.hp >= c.stats.maxHp) {
-        showMessage(`${c.displayName} is already at full HP!`);
-        return;
-      }
-      // Use Full Restore first, then Heal Chip
-      if (game.items.fullRestore > 0) {
-        game.items.fullRestore--;
-        c.fullHeal();
-        SFX.heal();
-        game.save();
-        showMessage(`💉 Full Restore used! ${c.displayName} fully healed!`);
-      } else if (game.items.healChip > 0) {
-        game.items.healChip--;
-        const healed = Math.min(c.stats.maxHp - c.stats.hp, 50);
-        c.stats.hp = Math.min(c.stats.maxHp, c.stats.hp + 50);
-        SFX.heal();
-        game.save();
-        showMessage(`💊 Heal Chip used! +${healed} HP!`);
-      } else {
-        showMessage(`💊 No healing items!\nBuy some at the Shop or craft them.`);
-      }
-      render();
-    });
-    const boostBtn = document.getElementById('boost-btn');
-    if (boostBtn) boostBtn.addEventListener('click', () => {
-      if (game.materials?.notEssence && game.active) {
-        game.active.addXP(500);
-        game.materials.notEssence--;
-        SFX.levelUp(); game.save(); render();
-        showMessage(`✨ +500 XP to ${game.active.displayName}!`);
-      }
-    });
     // Start home music
     if (!getCurrentTrack() || getCurrentTrack() !== 'home') playMusic('home');
   }
@@ -971,7 +944,45 @@ function handleStarterInput(btn) {
 }
 
 function handleHomeInput(btn) {
-  if (btn === 'a') { menuIdx = 0; setScreen('menu'); SFX.menuSelect(); }
+  const c = game.active;
+  const hasHeal = game.items.fullRestore > 0 || game.items.healChip > 0;
+  const maxIdx = 1 + (hasHeal ? 1 : 0) + (c?.canEvolve ? 1 : 0);
+
+  if (btn === 'left')  { homeActionIdx = Math.max(0, homeActionIdx - 1); SFX.menuMove(); render(); }
+  if (btn === 'right') { homeActionIdx = Math.min(maxIdx - 1, homeActionIdx + 1); SFX.menuMove(); render(); }
+
+  if (btn === 'a') {
+    SFX.menuSelect();
+    if (homeActionIdx === 0) {
+      // MENU
+      menuIdx = 0; setScreen('menu');
+    } else if (homeActionIdx === 1 && hasHeal) {
+      // HEAL
+      if (!c) return;
+      if (c.stats.hp >= c.stats.maxHp) { showMessage(`${c.displayName} is already at full HP!`); return; }
+      if (game.items.fullRestore > 0) {
+        game.items.fullRestore--;
+        c.fullHeal();
+        SFX.heal();
+        showMessage(`💉 Full Restore! ${c.displayName} fully healed!`);
+      } else if (game.items.healChip > 0) {
+        game.items.healChip--;
+        const healed = Math.min(c.stats.maxHp - c.stats.hp, 50);
+        c.stats.hp = Math.min(c.stats.maxHp, c.stats.hp + 50);
+        SFX.heal();
+        showMessage(`💊 +${healed} HP restored!`);
+      }
+      game.save();
+      render();
+    } else {
+      // EVOLVE
+      if (c?.canEvolve) {
+        const oldName = c.displayName;
+        c.evolve(); SFX.evolve(); game.save();
+        showMessage(`${oldName} is evolving!`, () => setScreen('evolving'));
+      }
+    }
+  }
 }
 
 function handleMenuInput(btn) {
