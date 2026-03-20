@@ -1108,10 +1108,9 @@ function handleBattleInput(btn) {
         setTimeout(() => {
           const result = battle.executePlayerMove(moves[action].id);
           render();
-          if (result?.damage > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
-          playTone(300 + result.damage * 2, 0.15, 'square', 0.1);
+          if ((result?.damage || 0) > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
 
-          if (result.fainted || battle.finished) {
+          if (result?.fainted || battle.finished) {
             setTimeout(() => {
               battleState = 'result';
               handleBattleEnd();
@@ -1125,11 +1124,10 @@ function handleBattleInput(btn) {
               const enemyMove = battle.getAIMove();
               const aiResult = battle.executeEnemyMove(enemyMove.id);
               render();
-              if (aiResult?.damage > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
-              playTone(200 + aiResult.damage * 1.5, 0.15, 'sawtooth', 0.1);
+              if ((aiResult?.damage || 0) > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
 
               setTimeout(() => {
-                if (aiResult.fainted || battle.finished) {
+                if (aiResult?.fainted || battle.finished) {
                   battleState = 'result';
                   handleBattleEnd();
                 } else {
