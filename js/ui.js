@@ -362,35 +362,41 @@ function renderBattle() {
   const p = battle.player;
   const e = battle.enemy;
   const moves = p.moves;
-  const isAnimating = battleState === 'playerAttack' || battleState === 'enemyAttack';
   const isPlayerTurn = battleState === 'choose';
 
-  // Unified action list: 4 moves + trap + swap + run
+  // Flat array — position in this array IS battleActionIdx (0-based, no gaps)
   const allActions = [
-    ...moves.map((m, i) => ({ type: 'move', idx: i, label: m.name, sub: `PWR ${m.power || '—'} • ${m.type.toUpperCase()}`, typeColor: TYPES[m.type]?.color || '#888' })),
-    { type: 'trap', idx: 4, label: '📡 Trap', sub: `x${game.items.dataTrap || 0}`, typeColor: '#9b59b6' },
-    { type: 'swap', idx: 5, label: '🔄 Swap', sub: `${game.team.filter(c => c.isAlive && c !== battle.player).length} available`, typeColor: '#3498db' },
-    { type: 'run',  idx: 6, label: '🏃 Run',  sub: `${e._isBoss ? '❌ Cannot run' : 'Escape!'}`, typeColor: '#e74c3c' },
+    ...moves.map((m, i) => ({
+      type: 'move', moveIdx: i,
+      label: m.name, sub: `PWR ${m.power || '—'} · ${m.type.toUpperCase()}`,
+      dot: TYPES[m.type]?.color || '#888'
+    })),
+    { type: 'trap', label: '📡 Trap',  sub: `x${game.items.dataTrap || 0}`,  dot: '#9b59b6' },
+    { type: 'swap', label: '🔄 Swap',  sub: `${game.team.filter(c=>c.isAlive&&c!==battle.player).length} ready`, dot: '#3498db' },
+    { type: 'run',  label: '🏃 Run',   sub: e._isBoss ? '❌ Cannot' : 'Escape!', dot: '#e74c3c' },
   ];
 
-  // Battle log: last 6 messages with turn markers
-  const logMsgs = battle.log.slice(-6);
-  const logHTML = logMsgs.map((line, i) => {
-    const isLast = i === logMsgs.length - 1;
-    const isPlayer = line.includes('→');
-    return `<div class="log-line ${isLast ? 'log-last' : ''} ${isPlayer ? 'log-player' : 'log-enemy'}">${line}</div>`;
+  const safeIdx = Math.min(battleActionIdx, allActions.length - 1);
+
+  const logHTML = battle.log.slice(-5).map((line, i, arr) => {
+    const last = i === arr.length - 1;
+    const isP = line.includes('→');
+    return `<div class="log-line ${last ? 'log-last' : ''} ${isP ? 'log-player' : ''}">${line}</div>`;
   }).join('');
 
-  // Turn indicator
-  const turnLabel = battleState === 'playerAttack' ? '⚔️ ATTACKING...' :
-                    battleState === 'enemyAttack' ? '👹 ENEMY...' :
-                    battleState === 'result' ? (battle.winner === 'capture' || battle.winner === 'player' ? '🏆 VICTORY!' : '💀 DEFEAT!') : 'YOUR TURN';
+  const turnLabel =
+    battleState === 'playerAttack' ? '⚔️ Attacking...' :
+    battleState === 'enemyAttack'  ? '👹 Enemy...'     :
+    battleState === 'result'       ?
+      (battle.winner === 'player' || battle.winner === 'capture' ? '🏆 Victory!' : battle.winner === 'run' ? '🏃 Escaped!' : '💀 Defeat!') :
+    'YOUR TURN';
 
   const resultHTML = battleState === 'result' ? `
-    <div class="battle-result-overlay ${battle.winner === 'capture' || battle.winner === 'player' ? 'win' : 'lose'}">
+    <div class="battle-result-overlay ${battle.winner === 'player' || battle.winner === 'capture' ? 'win' : 'lose'}">
       ${battle.winner === 'capture' ? `📡 ${e.displayName} captured!` :
-        battle.winner === 'player' ? `🏆 Victory! +${battle.xpReward || 0} XP` :
-        battle.winner === 'run' ? `🏃 Got away!` : `💀 ${p.displayName} was defeated...`}
+        battle.winner === 'player'  ? `🏆 Victory!` :
+        battle.winner === 'run'     ? `🏃 Got away!` :
+        `💀 Defeated...`}
     </div>` : '';
 
   return `
@@ -399,20 +405,20 @@ function renderBattle() {
       <div class="battle-field">
         <div class="battle-enemy">
           <div class="battle-info-enemy">
-            <span>${e.isShiny ? '✨ ' : ''}${e.typeIcon} ${e.displayName} Lv.${e.level}</span>
+            <span>${e.isShiny?'✨ ':''}${e.typeIcon} ${e.displayName} Lv.${e.level}</span>
             ${hpBar(e.stats.hp, e.stats.maxHp)}
             ${e.status ? `<span class="status-badge status-${e.status}">${e.status}</span>` : ''}
           </div>
-          <div class="battle-sprite enemy-sprite ${battleState === 'playerAttack' ? 'attacking' : ''} ${!e.isAlive ? 'fainted' : ''}">
-            <img src="${renderCreatureSprite(e.dna, e.type, e.stage, 4, e.isShiny)}" draggable="false">
+          <div class="battle-sprite enemy-sprite ${battleState==='playerAttack'?'attacking':''} ${!e.isAlive?'fainted':''}">
+            <img src="${renderCreatureSprite(e.dna,e.type,e.stage,4,e.isShiny)}" draggable="false">
           </div>
         </div>
         <div class="battle-player">
-          <div class="battle-sprite player-sprite ${battleState === 'enemyAttack' ? 'attacking' : ''} ${!p.isAlive ? 'fainted' : ''}">
-            <img src="${renderCreatureSprite(p.dna, p.type, p.stage, 4, p.isShiny)}" draggable="false">
+          <div class="battle-sprite player-sprite ${battleState==='enemyAttack'?'attacking':''} ${!p.isAlive?'fainted':''}">
+            <img src="${renderCreatureSprite(p.dna,p.type,p.stage,4,p.isShiny)}" draggable="false">
           </div>
           <div class="battle-info-player">
-            <span>${p.isShiny ? '✨ ' : ''}${p.typeIcon} ${p.displayName} Lv.${p.level}</span>
+            <span>${p.isShiny?'✨ ':''}${p.typeIcon} ${p.displayName} Lv.${p.level}</span>
             ${hpBar(p.stats.hp, p.stats.maxHp)}
             ${p.status ? `<span class="status-badge status-${p.status}">${p.status}</span>` : ''}
           </div>
@@ -421,17 +427,18 @@ function renderBattle() {
       <div class="battle-log-container">
         <div class="battle-log">${logHTML}</div>
       </div>
-      <div class="turn-indicator ${isPlayerTurn ? 'your-turn' : 'enemy-turn'}">${turnLabel}</div>
+      <div class="turn-indicator ${isPlayerTurn?'your-turn':'enemy-turn'}">${turnLabel}</div>
       ${isPlayerTurn ? `
       <div class="battle-actions">
-        ${allActions.map(a => `
-          <button class="battle-action-btn ${battleActionIdx === a.idx ? 'selected' : ''}" data-idx="${a.idx}">
-            <span class="action-dot" style="background:${a.typeColor}"></span>
+        ${allActions.map((a, pos) => `
+          <button class="battle-action-btn ${pos===safeIdx?'selected':''}" data-pos="${pos}">
+            <span class="action-dot" style="background:${a.dot}"></span>
             <span class="action-label">${a.label}</span>
             <span class="action-sub">${a.sub}</span>
           </button>`).join('')}
       </div>
-      ` : `<div class="battle-actions-disabled"><span class="hint">...</span></div>`}
+      <div class="hint">▲▼◄► Navigate · A = Use · B = Back</div>
+      ` : `<div class="battle-actions-disabled"></div>`}
     </div>`;
 }
 
@@ -1088,120 +1095,111 @@ function startBattle(enemy) {
 }
 
 function handleBattleInput(btn) {
-  const moves = battle.player.moves;
-  const maxIdx = 3 + (moves.length > 4 ? 1 : 0) + (game.team.filter(c => c.isAlive && c !== battle.player).length > 0 ? 1 : 0) + 1;
-
-  if (battleState === 'choose') {
-    if (btn === 'up') {
-      if (battleActionIdx >= 4) battleActionIdx = battleActionIdx === 4 ? moves.length - 1 : 4;
-      else battleActionIdx = Math.max(0, battleActionIdx - 1);
-      SFX.menuMove();
-    }
-    else if (btn === 'down') {
-      if (battleActionIdx < 4) battleActionIdx = Math.min(moves.length - 1, battleActionIdx + 1);
-      else battleActionIdx++;
-      SFX.menuMove();
-    }
-    else if (btn === 'left' || btn === 'right') {
-      SFX.menuMove();
-    }
-    else if (btn === 'a') {
-      SFX.menuSelect();
-      const action = battleActionIdx;
-
-      if (action < moves.length) {
-        // ATTACK
-        battleState = 'playerAttack';
-        render();
-        playMusic('battle');
-
-        // Player attacks
-        setTimeout(() => {
-          const result = battle.executePlayerMove(moves[action].id);
-          render();
-          if ((result?.damage || 0) > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
-
-          if (result?.fainted || battle.finished) {
-            setTimeout(() => {
-              battleState = 'result';
-              handleBattleEnd();
-              render();
-            }, 800);
-          } else {
-            // ENEMY TURN
-            battleState = 'enemyAttack';
-            render();
-            setTimeout(() => {
-              const enemyMove = battle.getAIMove();
-              const aiResult = battle.executeEnemyMove(enemyMove.id);
-              render();
-              if ((aiResult?.damage || 0) > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
-
-              setTimeout(() => {
-                if (aiResult?.fainted || battle.finished) {
-                  battleState = 'result';
-                  handleBattleEnd();
-                } else {
-                  battleState = 'choose';
-                }
-                render();
-              }, 700);
-            }, 600);
-          }
-        }, 300);
-
-      } else if (action === moves.length) {
-        // TRAP
-        battleState = 'playerAttack';
-        render();
-        setTimeout(() => {
-          const trapType = game.items.shinyTrap ? 'shinyTrap' : game.items.ultraTrap ? 'ultraTrap' : game.items.superTrap ? 'superTrap' : 'dataTrap';
-          const rate = trapType === 'ultraTrap' ? 0.7 : trapType === 'superTrap' ? 0.5 : trapType === 'shinyTrap' ? 0.8 : 0.35;
-          const caught = Math.random() < rate;
-          battle.log.push(`📡 Used ${trapType}!`);
-          if (caught) {
-            battle.winner = 'capture';
-            battle.finished = true;
-          } else {
-            battle.log.push(`${battle.enemy.displayName} broke free!`);
-          }
-          render();
-          setTimeout(() => {
-            if (battle.finished) { battleState = 'result'; handleBattleEnd(); }
-            else { battleState = 'choose'; }
-            render();
-          }, 800);
-        }, 300);
-
-      } else if (action === moves.length + 1) {
-        // SWAP — show team
-        swapMode = true; swapIdx = 0;
-        battleState = 'choose'; // reset but we switch screens
-        setScreen('swapBattle');
-        return;
-
-      } else {
-        // RUN
-        if (battle.enemy._isBoss) {
-          battle.log.push(`❌ Can't run from a Boss!`);
-          render();
-        } else {
-          battle.winner = 'run'; battle.finished = true; battleState = 'result';
-          battle.log.push(`🏃 Got away safely!`);
-          render();
-          setTimeout(() => { handleBattleEnd(); render(); }, 500);
-        }
-      }
-    }
-    render();
-  } else if (battleState === 'result') {
-    if (btn === 'a') {
+  if (battleState === 'result') {
+    if (btn === 'a' || btn === 'b') {
       SFX.menuSelect();
       battle = null;
       game.save();
       playMusic('home');
-      if (currentScreen === 'battle') { setScreen('home'); screenStack = []; }
+      setScreen('home'); screenStack = [];
     }
+    return;
+  }
+
+  if (battleState !== 'choose') return; // ignore input while animating
+
+  const moves = battle.player.moves;
+  const total = moves.length + 3; // moves + trap + swap + run
+  const cols = 2;
+
+  if (btn === 'up')    { battleActionIdx = Math.max(0, battleActionIdx - cols); SFX.menuMove(); render(); return; }
+  if (btn === 'down')  { battleActionIdx = Math.min(total - 1, battleActionIdx + cols); SFX.menuMove(); render(); return; }
+  if (btn === 'left')  { if (battleActionIdx % cols > 0) { battleActionIdx--; SFX.menuMove(); } render(); return; }
+  if (btn === 'right') { if (battleActionIdx % cols < cols - 1 && battleActionIdx + 1 < total) { battleActionIdx++; SFX.menuMove(); } render(); return; }
+
+  if (btn !== 'a') return;
+
+  // Build same allActions array to resolve action
+  const allActions = [
+    ...moves.map((m, i) => ({ type: 'move', moveIdx: i })),
+    { type: 'trap' },
+    { type: 'swap' },
+    { type: 'run'  },
+  ];
+
+  const safeIdx = Math.min(battleActionIdx, allActions.length - 1);
+  const action = allActions[safeIdx];
+  SFX.menuSelect();
+
+  if (action.type === 'move') {
+    const moveId = moves[action.moveIdx].id;
+    battleState = 'playerAttack';
+    render();
+
+    setTimeout(() => {
+      const result = battle.executePlayerMove(moveId);
+      render();
+      if ((result?.damage || 0) > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
+
+      if (result?.fainted || battle.finished) {
+        setTimeout(() => { battleState = 'result'; handleBattleEnd(); render(); }, 700);
+      } else {
+        battleState = 'enemyAttack';
+        render();
+        setTimeout(() => {
+          const enemyMove = battle.getAIMove();
+          const aiResult = battle.executeEnemyMove(enemyMove.id);
+          render();
+          if ((aiResult?.damage || 0) > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
+          setTimeout(() => {
+            if (aiResult?.fainted || battle.finished) {
+              battleState = 'result'; handleBattleEnd();
+            } else {
+              battleState = 'choose';
+            }
+            render();
+          }, 600);
+        }, 500);
+      }
+    }, 250);
+
+  } else if (action.type === 'trap') {
+    const trapType = game.items.shinyTrap > 0 ? 'shinyTrap' :
+                     game.items.ultraTrap > 0 ? 'ultraTrap' :
+                     game.items.superTrap > 0 ? 'superTrap' : 'dataTrap';
+    if (!game.items[trapType] || game.items[trapType] <= 0) {
+      showMessage('No traps left! Craft or buy more.'); return;
+    }
+    game.items[trapType]--;
+    const rate = trapType === 'shinyTrap' ? 0.8 : trapType === 'ultraTrap' ? 0.7 : trapType === 'superTrap' ? 0.5 : 0.35;
+    battleState = 'playerAttack';
+    render();
+    setTimeout(() => {
+      const caught = Math.random() < rate;
+      battle.log.push(caught ? `📡 Got it!` : `${battle.enemy.displayName} broke free!`);
+      if (caught) { battle.winner = 'capture'; battle.finished = true; battleState = 'result'; handleBattleEnd(); }
+      else {
+        battleState = 'enemyAttack'; render();
+        setTimeout(() => {
+          const em = battle.getAIMove();
+          battle.executeEnemyMove(em.id);
+          battleState = 'choose'; render();
+        }, 500);
+      }
+      render();
+    }, 400);
+
+  } else if (action.type === 'swap') {
+    const others = game.team.filter(c => c.isAlive && c !== battle.player);
+    if (!others.length) { showMessage('No other Nots available!'); return; }
+    swapMode = true; swapIdx = 0;
+    setScreen('swapBattle');
+
+  } else if (action.type === 'run') {
+    if (battle.enemy._isBoss) { showMessage('Cannot run from a Boss!'); return; }
+    battle.winner = 'run'; battle.finished = true;
+    battle.log.push('🏃 Got away safely!');
+    battleState = 'result'; handleBattleEnd(); render();
   }
 }
 
@@ -1297,11 +1295,10 @@ function handleBattleEnd() {
 // Touch handling for battle special buttons
 document.addEventListener('click', (e) => {
   if (currentScreen !== 'battle' || battleState !== 'choose') return;
-
-  const actionBtn = e.target.closest('.battle-action-btn[data-idx]');
+  const actionBtn = e.target.closest('.battle-action-btn[data-pos]');
   if (actionBtn) {
     e.preventDefault();
-    battleActionIdx = parseInt(actionBtn.dataset.idx);
+    battleActionIdx = parseInt(actionBtn.dataset.pos);
     render();
     handleBattleInput('a');
   }
@@ -2196,9 +2193,9 @@ function bindControls() {
       render();
       return;
     }
-    const actionBtn = e.target.closest('.battle-action-btn[data-idx]');
+    const actionBtn = e.target.closest('.battle-action-btn[data-pos]');
     if (actionBtn && currentScreen === 'battle' && battleState === 'choose') {
-      battleActionIdx = parseInt(actionBtn.dataset.idx);
+      battleActionIdx = parseInt(actionBtn.dataset.pos);
       render();
       handleInput('a');
       return;
