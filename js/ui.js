@@ -443,73 +443,64 @@ function renderBattle() {
   const hand = battle.hand || [];
   const intent = battle.enemyIntent || {};
 
-  // Intent display
   const intentHTML = intent.type === 'attack'
-    ? `<span class="intent intent-atk">${intent.icon} ${intent.desc || intent.value}${intent.hits > 1 ? 'x'+intent.hits : ''}</span>`
-    : `<span class="intent intent-other">${intent.icon} ${intent.desc || intent.value || '?'}</span>`;
+    ? `<span class="intent intent-atk">${intent.icon || '🗡️'} ${intent.value || '?'}${(intent.hits||1) > 1 ? 'x'+(intent.hits) : ''}</span>`
+    : `<span class="intent intent-other">${intent.icon || '?'} ${intent.desc || intent.value || ''}</span>`;
 
-  // Enemy buffs
-  const eBuffs = Object.entries(battle.eBuffs || {}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag">${k}:${v}</span>`).join('');
-  const pBuffs = Object.entries(battle.pBuffs || {}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag">${k}:${v}</span>`).join('');
+  const eBuffs = Object.entries(battle.eBuffs||{}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag buff-${k}">${k[0].toUpperCase()}${v}</span>`).join('');
+  const pBuffs = Object.entries(battle.pBuffs||{}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag buff-${k}">${k[0].toUpperCase()}${v}</span>`).join('');
 
-  // Cards in hand
   const cardsHTML = hand.map((id, i) => {
     const card = CARDS[id];
     if (!card) return '';
     const sel = battleActionIdx === i;
-    const affordable = card.cost <= battle.dp;
-    const typeColor = TYPES[card.type]?.color || '#888';
-    return `<div class="card ${sel ? 'card-selected' : ''} ${affordable ? '' : 'card-disabled'} card-${card.cat}" data-pos="${i}">
-      <div class="card-cost" style="background:${typeColor}">${card.cost}</div>
-      <div class="card-name">${card.name}</div>
-      <div class="card-desc">${card.desc}</div>
+    const ok = card.cost <= battle.dp;
+    const tc = TYPES[card.type]?.color || '#888';
+    return `<div class="card ${sel?'card-selected':''} ${ok?'':'card-disabled'} card-${card.cat}" data-pos="${i}">
+      <div class="card-top"><span class="card-cost" style="background:${tc}">${card.cost}</span><span class="card-title">${card.name}</span></div>
+      <div class="card-body">${card.desc}</div>
     </div>`;
   }).join('');
 
-  const logHTML = battle.log.slice(-3).map(l => `<div class="log-line">${l}</div>`).join('');
+  const logHTML = battle.log.slice(-2).map(l=>`<div class="log-line">${l}</div>`).join('');
 
   const resultHTML = battleState === 'result' ? `
     <div class="battle-result-overlay ${battle.winner==='player'?'win':'lose'}">
-      ${battle.winner==='player' ? '🏆 Victory!' : '💀 Defeated...'}
+      ${battle.winner==='player'?'🏆 Victory!':'💀 Defeated...'}
     </div>` : '';
 
   return `
     <div class="screen-battle card-battle">
       ${resultHTML}
-      <div class="cb-field">
-        <div class="cb-enemy">
-          <div class="cb-info">${e.typeIcon} ${e.displayName} Lv.${e.level}</div>
-          ${hpBar(e.stats.hp, e.stats.maxHp)}
-          <div class="cb-buffs">${eBuffs}</div>
-          <div class="cb-intent">${intentHTML}</div>
-          ${battle.eShield > 0 ? `<span class="shield-badge">🛡️${battle.eShield}</span>` : ''}
-          <div class="cb-sprite">
-            <img src="${renderCreatureSprite(e.dna,e.type,e.stage,3,e.isShiny)}" draggable="false">
+      <div class="cb-top">
+        <div class="cb-enemy-row">
+          <div class="cb-sprite-sm"><img src="${renderCreatureSprite(e.dna,e.type,e.stage,3,e.isShiny)}" draggable="false"></div>
+          <div class="cb-enemy-info">
+            <div class="cb-name">${e.typeIcon} ${e.displayName} Lv.${e.level} ${battle.eShield>0?'🛡️'+battle.eShield:''}</div>
+            ${hpBar(e.stats.hp, e.stats.maxHp)}
+            <div class="cb-meta">${intentHTML} ${eBuffs}</div>
           </div>
         </div>
-        <div class="cb-player">
-          <div class="cb-sprite">
-            <img src="${renderCreatureSprite(p.dna,p.type,p.stage,3,p.isShiny)}" draggable="false">
+        <div class="cb-player-row">
+          <div class="cb-sprite-sm"><img src="${renderCreatureSprite(p.dna,p.type,p.stage,3,p.isShiny)}" draggable="false"></div>
+          <div class="cb-player-info">
+            <div class="cb-name">${p.typeIcon} ${p.displayName} Lv.${p.level} ${battle.pShield>0?'🛡️'+battle.pShield:''}</div>
+            ${hpBar(p.stats.hp, p.stats.maxHp)}
+            <div class="cb-meta">${pBuffs}</div>
           </div>
-          ${battle.pShield > 0 ? `<span class="shield-badge">🛡️${battle.pShield}</span>` : ''}
-          <div class="cb-info">${p.typeIcon} ${p.displayName} Lv.${p.level}</div>
-          ${hpBar(p.stats.hp, p.stats.maxHp)}
-          <div class="cb-buffs">${pBuffs}</div>
         </div>
       </div>
       <div class="cb-log">${logHTML}</div>
-      <div class="cb-dp">
-        ${'⚡'.repeat(battle.dp)}${'·'.repeat(Math.max(0, battle.maxDP - battle.dp))}
-        <span>DP ${battle.dp}/${battle.maxDP}</span>
-        <span>🎴 ${battle.drawPile.length} draw · ${battle.discard.length} disc</span>
+      <div class="cb-dp-bar">
+        <span class="dp-pips">${'⚡'.repeat(battle.dp)}${'<span class="dp-empty">·</span>'.repeat(Math.max(0,battle.maxDP-battle.dp))}</span>
+        <span class="dp-info">🎴${battle.drawPile.length}/${battle.discard.length}</span>
       </div>
       ${isPlayerTurn ? `
       <div class="cb-hand">${cardsHTML}</div>
       <div class="cb-actions">
-        <button class="end-turn-btn ${battleActionIdx === hand.length ? 'selected' : ''}" data-pos="${hand.length}">⏭️ END TURN</button>
+        <button class="end-turn-btn ${battleActionIdx===hand.length?'selected':''}" data-pos="${hand.length}">⏭️ END TURN</button>
       </div>
-      <div class="hint">◄► Card · A Play · ▼ End Turn</div>
-      ` : battleState === 'result' ? `<div class="hint">A = Continue</div>` : ''}
+      ` : battleState === 'result' ? `<div class="hint">A = Continue</div>` : `<div class="cb-wait">Enemy turn...</div>`}
     </div>`;
 }
 
