@@ -17,7 +17,7 @@ import {
   generateNPCTeam
 } from './map.js';
 import {
-  NODE, RELICS, EVENTS, CARDS as RUN_CARDS,
+  NODE, RELICS, EVENTS,
   createRun, generateRunMap, generateCardReward, generateShopItems
 } from './run.js';
 import {
