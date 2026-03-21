@@ -584,3 +584,84 @@ export function generateDailyMissions(daySeed) {
   });
   return shuffled.slice(0, 3);
 }
+
+// ═══════════════════════════════════════════
+// V5 — Card Combat System (Slay the Spire style)
+// ═══════════════════════════════════════════
+
+// Card catalog
+export const CARDS = {
+  // ── Universal ──
+  strike:      { name: 'Strike',      type: 'neutral', cat: 'attack', cost: 1, damage: 6, block: 0, effect: null, desc: 'Deal 6 damage' },
+  defend:      { name: 'Defend',      type: 'neutral', cat: 'block',  cost: 1, damage: 0, block: 5, effect: null, desc: 'Gain 5 shield' },
+  bash:        { name: 'Bash',        type: 'neutral', cat: 'attack', cost: 2, damage: 8, block: 0, effect: 'vulnerable', effectVal: 2, desc: 'Deal 8. Apply 2 Vulnerable' },
+  surge:       { name: 'Surge',       type: 'neutral', cat: 'skill',  cost: 0, damage: 0, block: 0, effect: 'energy', effectVal: 1, desc: 'Gain 1 DP' },
+  heal_pulse:  { name: 'Heal Pulse',  type: 'neutral', cat: 'skill',  cost: 1, damage: 0, block: 0, effect: 'heal', effectVal: 6, desc: 'Heal 6 HP' },
+
+  // ── Ember ──
+  ember_slash: { name: 'Ember Slash', type: 'ember', cat: 'attack', cost: 1, damage: 8, block: 0, effect: null, desc: 'Deal 8 damage' },
+  flame_wall:  { name: 'Flame Wall',  type: 'ember', cat: 'block',  cost: 1, damage: 0, block: 7, effect: null, desc: 'Gain 7 shield' },
+  eruption:    { name: 'Eruption',    type: 'ember', cat: 'attack', cost: 2, damage: 14, block: 0, effect: 'burn', effectVal: 3, desc: 'Deal 14. Apply 3 Burn' },
+  magma_armor: { name: 'Magma Armor', type: 'ember', cat: 'power',  cost: 2, damage: 0, block: 0, effect: 'thorns', effectVal: 3, desc: 'Gain 3 Thorns (permanent)' },
+  inferno:     { name: 'Inferno',     type: 'ember', cat: 'attack', cost: 3, damage: 24, block: 0, effect: null, desc: 'Deal 24 damage' },
+
+  // ── Flux ──
+  aqua_jet:    { name: 'Aqua Jet',    type: 'flux',  cat: 'attack', cost: 1, damage: 7, block: 3, effect: null, desc: 'Deal 7. Gain 3 shield' },
+  ice_shield:  { name: 'Ice Shield',  type: 'flux',  cat: 'block',  cost: 1, damage: 0, block: 8, effect: null, desc: 'Gain 8 shield' },
+  tsunami:     { name: 'Tsunami',     type: 'flux',  cat: 'attack', cost: 2, damage: 5, block: 0, effect: 'weak', effectVal: 2, desc: 'Deal 5. Apply 2 Weak' },
+  regen:       { name: 'Regenerate',  type: 'flux',  cat: 'power',  cost: 2, damage: 0, block: 0, effect: 'regen', effectVal: 3, desc: 'Heal 3 HP each turn' },
+  tidal_wave:  { name: 'Tidal Wave',  type: 'flux',  cat: 'attack', cost: 3, damage: 12, block: 6, effect: null, desc: 'Deal 12. Gain 6 shield' },
+
+  // ── Bloom ──
+  vine_whip:   { name: 'Vine Whip',   type: 'bloom', cat: 'attack', cost: 1, damage: 7, block: 0, effect: null, desc: 'Deal 7 damage' },
+  bark_skin:   { name: 'Bark Skin',   type: 'bloom', cat: 'block',  cost: 1, damage: 0, block: 9, effect: null, desc: 'Gain 9 shield' },
+  spore_cloud: { name: 'Spore Cloud', type: 'bloom', cat: 'skill',  cost: 1, damage: 0, block: 0, effect: 'poison', effectVal: 4, desc: 'Apply 4 Poison' },
+  photosyn:    { name: 'Photosyn',    type: 'bloom', cat: 'power',  cost: 2, damage: 0, block: 0, effect: 'regen', effectVal: 4, desc: 'Heal 4 HP each turn' },
+  solar_beam:  { name: 'Solar Beam',  type: 'bloom', cat: 'attack', cost: 3, damage: 22, block: 0, effect: 'weak', effectVal: 1, desc: 'Deal 22. Apply 1 Weak' },
+
+  // ── Spark ──
+  zap:         { name: 'Zap',         type: 'spark', cat: 'attack', cost: 0, damage: 4, block: 0, effect: null, desc: 'Deal 4 damage' },
+  static:      { name: 'Static',      type: 'spark', cat: 'block',  cost: 1, damage: 0, block: 6, effect: null, desc: 'Gain 6 shield' },
+  overload:    { name: 'Overload',    type: 'spark', cat: 'attack', cost: 2, damage: 10, block: 0, effect: 'draw', effectVal: 2, desc: 'Deal 10. Draw 2 cards' },
+  battery:     { name: 'Battery',     type: 'spark', cat: 'power',  cost: 1, damage: 0, block: 0, effect: 'energy_perm', effectVal: 1, desc: '+1 DP each turn' },
+  thunderbolt: { name: 'Thunderbolt', type: 'spark', cat: 'attack', cost: 3, damage: 20, block: 0, effect: 'vulnerable', effectVal: 2, desc: 'Deal 20. Apply 2 Vulnerable' },
+
+  // ── Void ──
+  shadow_claw: { name: 'Shadow Claw', type: 'void',  cat: 'attack', cost: 1, damage: 9, block: 0, effect: null, desc: 'Deal 9 damage' },
+  dark_shroud: { name: 'Dark Shroud', type: 'void',  cat: 'block',  cost: 1, damage: 0, block: 6, effect: 'weak', effectVal: 1, desc: 'Gain 6 shield. Apply 1 Weak' },
+  soul_drain:  { name: 'Soul Drain',  type: 'void',  cat: 'attack', cost: 2, damage: 8, block: 0, effect: 'drain', effectVal: 8, desc: 'Deal 8. Heal 8 HP' },
+  curse:       { name: 'Curse',       type: 'void',  cat: 'skill',  cost: 1, damage: 0, block: 0, effect: 'vulnerable', effectVal: 3, desc: 'Apply 3 Vulnerable' },
+  void_blast:  { name: 'Void Blast',  type: 'void',  cat: 'attack', cost: 3, damage: 28, block: 0, effect: null, desc: 'Deal 28 damage' },
+
+  // ── Lux ──
+  holy_strike: { name: 'Holy Strike', type: 'lux',   cat: 'attack', cost: 1, damage: 6, block: 0, effect: 'heal', effectVal: 3, desc: 'Deal 6. Heal 3 HP' },
+  light_ward:  { name: 'Light Ward',  type: 'lux',   cat: 'block',  cost: 1, damage: 0, block: 7, effect: 'heal', effectVal: 2, desc: 'Gain 7 shield. Heal 2' },
+  purify:      { name: 'Purify',      type: 'lux',   cat: 'skill',  cost: 1, damage: 0, block: 0, effect: 'cleanse', effectVal: 0, desc: 'Remove all debuffs' },
+  divine_aura: { name: 'Divine Aura', type: 'lux',   cat: 'power',  cost: 2, damage: 0, block: 0, effect: 'strength', effectVal: 2, desc: 'Gain 2 Strength (permanent)' },
+  judgement:   { name: 'Judgement',    type: 'lux',   cat: 'attack', cost: 3, damage: 18, block: 8, effect: null, desc: 'Deal 18. Gain 8 shield' },
+
+  // ── Glitch ──
+  overflow:    { name: 'Overflow',    type: 'glitch', cat: 'attack', cost: 1, damage: 1, block: 0, effect: 'random_dmg', effectVal: 15, desc: 'Deal 1-15 random damage' },
+  segfault:    { name: 'Segfault',    type: 'glitch', cat: 'skill',  cost: 0, damage: 0, block: 0, effect: 'draw', effectVal: 3, desc: 'Draw 3 cards' },
+  bsod:        { name: 'BSOD',        type: 'glitch', cat: 'attack', cost: 2, damage: 15, block: 0, effect: 'vulnerable', effectVal: 3, desc: 'Deal 15. Apply 3 Vulnerable' },
+};
+
+// Starter decks per type (10 cards each)
+export const STARTER_DECKS = {
+  ember:  ['strike','strike','strike','defend','defend','ember_slash','ember_slash','flame_wall','bash','surge'],
+  flux:   ['strike','strike','strike','defend','defend','aqua_jet','aqua_jet','ice_shield','tsunami','surge'],
+  bloom:  ['strike','strike','strike','defend','defend','vine_whip','vine_whip','bark_skin','spore_cloud','surge'],
+  spark:  ['strike','strike','defend','defend','defend','zap','zap','static','overload','surge'],
+  void:   ['strike','strike','strike','defend','defend','shadow_claw','shadow_claw','dark_shroud','curse','surge'],
+  lux:    ['strike','strike','strike','defend','defend','holy_strike','holy_strike','light_ward','purify','surge'],
+  glitch: ['strike','strike','defend','defend','overflow','overflow','segfault','bash','surge','surge'],
+};
+
+// Enemy intent types
+export const INTENT = {
+  ATTACK: 'attack',
+  BLOCK:  'block',
+  BUFF:   'buff',
+  DEBUFF: 'debuff',
+  UNKNOWN:'unknown',
+};

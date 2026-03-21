@@ -7,7 +7,8 @@ import {
   xpForLevel, generateName, randomDNA, getTypeForDNA,
   BOSSES, ACHIEVEMENTS, DAILY_REWARDS, fuseDNA, getFusionType,
   MOVES, MATERIALS, RECIPES,
-  getTrainerRank, getNextRank, RARITY_TIERS
+  getTrainerRank, getNextRank, RARITY_TIERS,
+  CARDS, INTENT
 } from './data.js';
 import { renderCreatureSprite, renderCreatureBlinkSprite } from './pixel.js';
 import { SFX, initAudio, setMuted, isMuted, playMusic, stopMusic, getCurrentTrack } from './audio.js';
@@ -16,7 +17,7 @@ import {
   generateNPCTeam
 } from './map.js';
 import {
-  BattleEngine, generateWildCreature, generateBoss, performFusion,
+  BattleEngine, CardBattle, generateWildCreature, generateBoss, performFusion,
   checkAchievements, checkDailyLogin, simulatePvPBattle,
   exportTeamCode, importTeamCode,
   addMaterials, canCraft, craftItem, checkMoveLearning,
@@ -421,84 +422,77 @@ function renderBattle() {
   if (!battle) return '<div class="empty">No battle!</div>';
   const p = battle.player;
   const e = battle.enemy;
-  const moves = p.moves;
   const isPlayerTurn = battleState === 'choose';
+  const hand = battle.hand || [];
+  const intent = battle.enemyIntent || {};
 
-  // Flat array — position in this array IS battleActionIdx (0-based, no gaps)
-  const allActions = [
-    ...moves.map((m, i) => ({
-      type: 'move', moveIdx: i,
-      label: m.name, sub: `PWR ${m.power || '—'} · ${m.type.toUpperCase()}`,
-      dot: TYPES[m.type]?.color || '#888'
-    })),
-    { type: 'trap', label: '📡 Trap',  sub: `x${game.items.dataTrap || 0}`,  dot: '#9b59b6' },
-    { type: 'swap', label: '🔄 Swap',  sub: `${game.team.filter(c=>c.isAlive&&c!==battle.player).length} ready`, dot: '#3498db' },
-    { type: 'run',  label: '🏃 Run',   sub: e._isBoss ? '❌ Cannot' : 'Escape!', dot: '#e74c3c' },
-  ];
+  // Intent display
+  const intentHTML = intent.type === 'attack'
+    ? `<span class="intent intent-atk">${intent.icon} ${intent.desc || intent.value}${intent.hits > 1 ? 'x'+intent.hits : ''}</span>`
+    : `<span class="intent intent-other">${intent.icon} ${intent.desc || intent.value || '?'}</span>`;
 
-  const safeIdx = Math.min(battleActionIdx, allActions.length - 1);
+  // Enemy buffs
+  const eBuffs = Object.entries(battle.eBuffs || {}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag">${k}:${v}</span>`).join('');
+  const pBuffs = Object.entries(battle.pBuffs || {}).filter(([,v])=>v>0).map(([k,v])=>`<span class="buff-tag">${k}:${v}</span>`).join('');
 
-  const logHTML = battle.log.slice(-5).map((line, i, arr) => {
-    const last = i === arr.length - 1;
-    const isP = line.includes('→');
-    return `<div class="log-line ${last ? 'log-last' : ''} ${isP ? 'log-player' : ''}">${line}</div>`;
+  // Cards in hand
+  const cardsHTML = hand.map((id, i) => {
+    const card = CARDS[id];
+    if (!card) return '';
+    const sel = battleActionIdx === i;
+    const affordable = card.cost <= battle.dp;
+    const typeColor = TYPES[card.type]?.color || '#888';
+    return `<div class="card ${sel ? 'card-selected' : ''} ${affordable ? '' : 'card-disabled'} card-${card.cat}" data-pos="${i}">
+      <div class="card-cost" style="background:${typeColor}">${card.cost}</div>
+      <div class="card-name">${card.name}</div>
+      <div class="card-desc">${card.desc}</div>
+    </div>`;
   }).join('');
 
-  const turnLabel =
-    battleState === 'playerAttack' ? '⚔️ Attacking...' :
-    battleState === 'enemyAttack'  ? '👹 Enemy...'     :
-    battleState === 'result'       ?
-      (battle.winner === 'player' || battle.winner === 'capture' ? '🏆 Victory!' : battle.winner === 'run' ? '🏃 Escaped!' : '💀 Defeat!') :
-    'YOUR TURN';
+  const logHTML = battle.log.slice(-3).map(l => `<div class="log-line">${l}</div>`).join('');
 
   const resultHTML = battleState === 'result' ? `
-    <div class="battle-result-overlay ${battle.winner === 'player' || battle.winner === 'capture' ? 'win' : 'lose'}">
-      ${battle.winner === 'capture' ? `📡 ${e.displayName} captured!` :
-        battle.winner === 'player'  ? `🏆 Victory!` :
-        battle.winner === 'run'     ? `🏃 Got away!` :
-        `💀 Defeated...`}
+    <div class="battle-result-overlay ${battle.winner==='player'?'win':'lose'}">
+      ${battle.winner==='player' ? '🏆 Victory!' : '💀 Defeated...'}
     </div>` : '';
 
   return `
-    <div class="screen-battle">
+    <div class="screen-battle card-battle">
       ${resultHTML}
-      <div class="battle-field">
-        <div class="battle-enemy">
-          <div class="battle-info-enemy">
-            <span>${e.isShiny?'✨ ':''}${e.typeIcon} ${e.displayName} Lv.${e.level}</span>
-            ${hpBar(e.stats.hp, e.stats.maxHp)}
-            ${e.status ? `<span class="status-badge status-${e.status}">${e.status}</span>` : ''}
-          </div>
-          <div class="battle-sprite enemy-sprite ${battleState==='playerAttack'?'attacking':''} ${!e.isAlive?'fainted':''}">
-            <img src="${renderCreatureSprite(e.dna,e.type,e.stage,4,e.isShiny)}" draggable="false">
-          </div>
-        </div>
-        <div class="battle-player">
-          <div class="battle-sprite player-sprite ${battleState==='enemyAttack'?'attacking':''} ${!p.isAlive?'fainted':''}">
-            <img src="${renderCreatureSprite(p.dna,p.type,p.stage,4,p.isShiny)}" draggable="false">
-          </div>
-          <div class="battle-info-player">
-            <span>${p.isShiny?'✨ ':''}${p.typeIcon} ${p.displayName} Lv.${p.level}</span>
-            ${hpBar(p.stats.hp, p.stats.maxHp)}
-            ${p.status ? `<span class="status-badge status-${p.status}">${p.status}</span>` : ''}
+      <div class="cb-field">
+        <div class="cb-enemy">
+          <div class="cb-info">${e.typeIcon} ${e.displayName} Lv.${e.level}</div>
+          ${hpBar(e.stats.hp, e.stats.maxHp)}
+          <div class="cb-buffs">${eBuffs}</div>
+          <div class="cb-intent">${intentHTML}</div>
+          ${battle.eShield > 0 ? `<span class="shield-badge">🛡️${battle.eShield}</span>` : ''}
+          <div class="cb-sprite">
+            <img src="${renderCreatureSprite(e.dna,e.type,e.stage,3,e.isShiny)}" draggable="false">
           </div>
         </div>
+        <div class="cb-player">
+          <div class="cb-sprite">
+            <img src="${renderCreatureSprite(p.dna,p.type,p.stage,3,p.isShiny)}" draggable="false">
+          </div>
+          ${battle.pShield > 0 ? `<span class="shield-badge">🛡️${battle.pShield}</span>` : ''}
+          <div class="cb-info">${p.typeIcon} ${p.displayName} Lv.${p.level}</div>
+          ${hpBar(p.stats.hp, p.stats.maxHp)}
+          <div class="cb-buffs">${pBuffs}</div>
+        </div>
       </div>
-      <div class="battle-log-container">
-        <div class="battle-log">${logHTML}</div>
+      <div class="cb-log">${logHTML}</div>
+      <div class="cb-dp">
+        ${'⚡'.repeat(battle.dp)}${'·'.repeat(Math.max(0, battle.maxDP - battle.dp))}
+        <span>DP ${battle.dp}/${battle.maxDP}</span>
+        <span>🎴 ${battle.drawPile.length} draw · ${battle.discard.length} disc</span>
       </div>
-      <div class="turn-indicator ${isPlayerTurn?'your-turn':'enemy-turn'}">${turnLabel}</div>
       ${isPlayerTurn ? `
-      <div class="battle-actions">
-        ${allActions.map((a, pos) => `
-          <button class="battle-action-btn ${pos===safeIdx?'selected':''}" data-pos="${pos}">
-            <span class="action-dot" style="background:${a.dot}"></span>
-            <span class="action-label">${a.label}</span>
-            <span class="action-sub">${a.sub}</span>
-          </button>`).join('')}
+      <div class="cb-hand">${cardsHTML}</div>
+      <div class="cb-actions">
+        <button class="end-turn-btn ${battleActionIdx === hand.length ? 'selected' : ''}" data-pos="${hand.length}">⏭️ END TURN</button>
       </div>
-      <div class="hint">▲▼◄► Navigate · A = Use · B = Back</div>
-      ` : `<div class="battle-actions-disabled"></div>`}
+      <div class="hint">◄► Card · A Play · ▼ End Turn</div>
+      ` : battleState === 'result' ? `<div class="hint">A = Continue</div>` : ''}
     </div>`;
 }
 
@@ -1193,7 +1187,7 @@ function handleExploringInput(btn) {
 }
 
 function startBattle(enemy) {
-  battle = new BattleEngine(game.active, enemy);
+  battle = new CardBattle(game.active, enemy);
   battleState = 'choose';
   battleActionIdx = 0;
   game.totalBattles++;
@@ -1204,109 +1198,57 @@ function startBattle(enemy) {
 function handleBattleInput(btn) {
   if (battleState === 'result') {
     if (btn === 'a' || btn === 'b') {
-      SFX.menuSelect();
-      battle = null;
-      game.save();
-      playMusic('home');
-      setScreen('home'); screenStack = [];
+      SFX.menuSelect(); battle = null; game.save();
+      playMusic('home'); setScreen('home'); screenStack = [];
     }
     return;
   }
+  if (battleState !== 'choose') return;
 
-  if (battleState !== 'choose') return; // ignore input while animating
+  const hand = battle.hand || [];
+  const maxIdx = hand.length; // 0..hand.length-1 = cards, hand.length = END TURN
 
-  const moves = battle.player.moves;
-  const total = moves.length + 3; // moves + trap + swap + run
-  const cols = 2;
+  if (btn === 'left')  { battleActionIdx = Math.max(0, battleActionIdx - 1); SFX.menuMove(); render(); return; }
+  if (btn === 'right') { battleActionIdx = Math.min(maxIdx, battleActionIdx + 1); SFX.menuMove(); render(); return; }
+  if (btn === 'down')  { battleActionIdx = maxIdx; SFX.menuMove(); render(); return; } // jump to END TURN
+  if (btn === 'up')    { battleActionIdx = Math.min(hand.length - 1, Math.max(0, battleActionIdx)); SFX.menuMove(); render(); return; }
 
-  if (btn === 'up')    { battleActionIdx = Math.max(0, battleActionIdx - cols); SFX.menuMove(); render(); return; }
-  if (btn === 'down')  { battleActionIdx = Math.min(total - 1, battleActionIdx + cols); SFX.menuMove(); render(); return; }
-  if (btn === 'left')  { if (battleActionIdx % cols > 0) { battleActionIdx--; SFX.menuMove(); } render(); return; }
-  if (btn === 'right') { if (battleActionIdx % cols < cols - 1 && battleActionIdx + 1 < total) { battleActionIdx++; SFX.menuMove(); } render(); return; }
-
-  if (btn !== 'a') return;
-
-  // Build same allActions array to resolve action
-  const allActions = [
-    ...moves.map((m, i) => ({ type: 'move', moveIdx: i })),
-    { type: 'trap' },
-    { type: 'swap' },
-    { type: 'run'  },
-  ];
-
-  const safeIdx = Math.min(battleActionIdx, allActions.length - 1);
-  const action = allActions[safeIdx];
-  SFX.menuSelect();
-
-  if (action.type === 'move') {
-    const moveId = moves[action.moveIdx].id;
-    battleState = 'playerAttack';
-    render();
-
-    setTimeout(() => {
-      const result = battle.executePlayerMove(moveId);
+  if (btn === 'a') {
+    // END TURN
+    if (battleActionIdx >= hand.length) {
+      battleState = 'enemyTurn';
       render();
-      if ((result?.damage || 0) > 0) { SFX.hit(); shakeSprite('.enemy-sprite'); }
-
-      if (result?.fainted || battle.finished) {
-        setTimeout(() => { battleState = 'result'; handleBattleEnd(); render(); }, 700);
-      } else {
-        battleState = 'enemyAttack';
+      setTimeout(() => {
+        const results = battle.endTurn();
+        if (battle.finished) {
+          battleState = 'result';
+          handleBattleEnd();
+        } else {
+          battleState = 'choose';
+          battleActionIdx = 0;
+        }
         render();
-        setTimeout(() => {
-          const enemyMove = battle.getAIMove();
-          const aiResult = battle.executeEnemyMove(enemyMove.id);
-          render();
-          if ((aiResult?.damage || 0) > 0) { SFX.hit(); shakeSprite('.player-sprite'); }
-          setTimeout(() => {
-            if (aiResult?.fainted || battle.finished) {
-              battleState = 'result'; handleBattleEnd();
-            } else {
-              battleState = 'choose';
-            }
-            render();
-          }, 600);
-        }, 500);
-      }
-    }, 250);
-
-  } else if (action.type === 'trap') {
-    const trapType = game.items.shinyTrap > 0 ? 'shinyTrap' :
-                     game.items.ultraTrap > 0 ? 'ultraTrap' :
-                     game.items.superTrap > 0 ? 'superTrap' : 'dataTrap';
-    if (!game.items[trapType] || game.items[trapType] <= 0) {
-      showMessage('No traps left! Craft or buy more.'); return;
+      }, 500);
+      return;
     }
-    game.items[trapType]--;
-    const rate = trapType === 'shinyTrap' ? 0.8 : trapType === 'ultraTrap' ? 0.7 : trapType === 'superTrap' ? 0.5 : 0.35;
-    battleState = 'playerAttack';
+
+    // PLAY CARD
+    const cardId = hand[battleActionIdx];
+    const card = CARDS[cardId];
+    if (!card || card.cost > battle.dp) { SFX.menuBack(); return; }
+
+    SFX.hit();
+    const result = battle.playCard(battleActionIdx);
+    if (result?.error) { SFX.menuBack(); return; }
+
+    // Adjust selection
+    if (battleActionIdx >= battle.hand.length) battleActionIdx = Math.max(0, battle.hand.length - 1);
+
+    if (battle.finished) {
+      battleState = 'result';
+      handleBattleEnd();
+    }
     render();
-    setTimeout(() => {
-      const caught = Math.random() < rate;
-      battle.log.push(caught ? `📡 Got it!` : `${battle.enemy.displayName} broke free!`);
-      if (caught) { battle.winner = 'capture'; battle.finished = true; battleState = 'result'; handleBattleEnd(); }
-      else {
-        battleState = 'enemyAttack'; render();
-        setTimeout(() => {
-          const em = battle.getAIMove();
-          battle.executeEnemyMove(em.id);
-          battleState = 'choose'; render();
-        }, 500);
-      }
-      render();
-    }, 400);
-
-  } else if (action.type === 'swap') {
-    const others = game.team.filter(c => c.isAlive && c !== battle.player);
-    if (!others.length) { showMessage('No other Nots available!'); return; }
-    swapMode = true; swapIdx = 0;
-    setScreen('swapBattle');
-
-  } else if (action.type === 'run') {
-    if (battle.enemy._isBoss) { showMessage('Cannot run from a Boss!'); return; }
-    battle.winner = 'run'; battle.finished = true;
-    battle.log.push('🏃 Got away safely!');
-    battleState = 'result'; handleBattleEnd(); render();
   }
 }
 
@@ -1404,11 +1346,20 @@ function handleBattleEnd() {
 // Touch handling for battle special buttons
 document.addEventListener('click', (e) => {
   if (currentScreen !== 'battle' || battleState !== 'choose') return;
-  const actionBtn = e.target.closest('.battle-action-btn[data-pos]');
-  if (actionBtn) {
+  // Card tap
+  const card = e.target.closest('.card[data-pos]');
+  if (card) {
     e.preventDefault();
-    battleActionIdx = parseInt(actionBtn.dataset.pos);
+    battleActionIdx = parseInt(card.dataset.pos);
     render();
+    handleBattleInput('a');
+    return;
+  }
+  // End turn tap
+  const endBtn = e.target.closest('.end-turn-btn');
+  if (endBtn) {
+    e.preventDefault();
+    battleActionIdx = (battle?.hand || []).length;
     handleBattleInput('a');
   }
 });

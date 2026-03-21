@@ -2440,3 +2440,199 @@ body {
   min-height: 10px;
   flex-shrink: 0;
 }
+
+/* ═══════════════════════════════════════════ */
+/* V5 — Card Combat UI */
+/* ═══════════════════════════════════════════ */
+
+.card-battle {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 2px;
+  padding: 3px;
+}
+
+.cb-field {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.cb-enemy, .cb-player {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cb-enemy { align-items: flex-start; }
+.cb-player { align-items: flex-end; }
+
+.cb-info { font-size: 6px; color: var(--text-primary); }
+
+.cb-sprite {
+  display: flex;
+  justify-content: center;
+}
+
+.cb-sprite img {
+  width: 48px;
+  height: 48px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+
+.cb-intent {
+  margin-top: 1px;
+}
+
+.intent {
+  font-size: 6px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.intent-atk { background: rgba(255,50,50,0.3); color: #ff8888; }
+.intent-other { background: rgba(100,100,255,0.3); color: #aaaaff; }
+
+.cb-buffs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.buff-tag {
+  font-size: 5px;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-dim);
+}
+
+.shield-badge {
+  font-size: 6px;
+  color: #66aaff;
+  display: inline-block;
+}
+
+/* Battle log */
+.cb-log {
+  background: rgba(0,0,0,0.4);
+  border-radius: 3px;
+  padding: 2px 4px;
+  max-height: 30px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.cb-log .log-line { font-size: 5px; color: var(--text-dim); }
+
+/* DP bar */
+.cb-dp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 6px;
+  color: var(--text-accent);
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.cb-dp span { color: var(--text-dim); font-size: 5px; }
+
+/* Card hand */
+.cb-hand {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.card {
+  flex-shrink: 0;
+  width: 52px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  padding: 2px 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+}
+
+.card-selected {
+  border-color: var(--text-accent);
+  background: rgba(0,255,200,0.1);
+  transform: translateY(-3px);
+  box-shadow: 0 2px 8px rgba(0,255,200,0.2);
+}
+
+.card-disabled {
+  opacity: 0.35;
+}
+
+.card-attack { border-left: 2px solid #ff4444; }
+.card-block  { border-left: 2px solid #4488ff; }
+.card-skill  { border-left: 2px solid #44cc44; }
+.card-power  { border-left: 2px solid #ffaa00; }
+
+.card-cost {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6px;
+  color: #fff;
+  font-weight: bold;
+}
+
+.card-name {
+  font-size: 5px;
+  font-weight: bold;
+  color: var(--text-primary);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-desc {
+  font-size: 4px;
+  color: var(--text-dim);
+  margin-top: 1px;
+  line-height: 1.3;
+}
+
+/* End turn button */
+.cb-actions {
+  flex-shrink: 0;
+}
+
+.end-turn-btn {
+  width: 100%;
+  padding: 4px;
+  background: rgba(255,200,0,0.1);
+  border: 1px solid rgba(255,200,0,0.3);
+  border-radius: 4px;
+  color: #ffcc00;
+  font-size: 7px;
+  font-family: var(--pixel-font);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.end-turn-btn.selected {
+  background: rgba(255,200,0,0.2);
+  border-color: #ffcc00;
+  box-shadow: 0 0 8px rgba(255,200,0,0.3);
+}

@@ -996,3 +996,236 @@ export function updateStreak(gameState, won) {
   }
   return getStreakBonus(gameState.winStreak);
 }
+
+// ═══════════════════════════════════════════
+// V5 — Card Battle Engine (Slay the Spire style)
+// ═══════════════════════════════════════════
+import { CARDS, STARTER_DECKS, INTENT } from './data.js';
+
+export class CardBattle {
+  constructor(player, enemy) {
+    this.player = player;
+    this.enemy = enemy;
+    this.turn = 0;
+    this.maxDP = 3;
+    this.dp = 3;
+    this.pShield = 0;
+    this.eShield = 0;
+    this.log = [];
+    this.finished = false;
+    this.winner = null;
+
+    // Player buffs/debuffs
+    this.pBuffs = { strength: 0, thorns: 0, regen: 0, vulnerable: 0, weak: 0 };
+    // Enemy buffs/debuffs
+    this.eBuffs = { strength: 0, thorns: 0, regen: 0, vulnerable: 0, weak: 0, burn: 0, poison: 0 };
+
+    // Deck management
+    const deckIds = player.deck || STARTER_DECKS[player.type] || STARTER_DECKS.ember;
+    this.drawPile = this._shuffle([...deckIds]);
+    this.hand = [];
+    this.discard = [];
+
+    // Enemy intent
+    this.enemyIntent = this._rollIntent();
+
+    // Start: draw opening hand
+    this._drawCards(5);
+  }
+
+  _shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  _drawCards(n) {
+    for (let i = 0; i < n; i++) {
+      if (this.drawPile.length === 0) {
+        // Reshuffle discard into draw
+        this.drawPile = this._shuffle([...this.discard]);
+        this.discard = [];
+        if (this.drawPile.length === 0) break;
+      }
+      this.hand.push(this.drawPile.pop());
+    }
+  }
+
+  _rollIntent() {
+    const hp_pct = this.enemy.stats.hp / this.enemy.stats.maxHp;
+    const r = Math.random();
+    const baseDmg = 4 + Math.floor(this.enemy.level * 1.2);
+
+    if (hp_pct < 0.3 && r < 0.4) {
+      return { type: INTENT.BLOCK, value: 5 + Math.floor(this.enemy.level * 0.8), icon: '🛡️' };
+    }
+    if (r < 0.15) {
+      return { type: INTENT.BUFF, value: 2, icon: '💪', desc: 'Strength +2' };
+    }
+    if (r < 0.25) {
+      return { type: INTENT.DEBUFF, value: 2, icon: '😈', desc: 'Weak 2' };
+    }
+    // Multi-attack
+    if (r < 0.4) {
+      const hits = 2 + Math.floor(Math.random() * 2);
+      return { type: INTENT.ATTACK, value: Math.floor(baseDmg * 0.5), hits, icon: '🗡️', desc: `${Math.floor(baseDmg*0.5)}x${hits}` };
+    }
+    // Heavy attack
+    if (r < 0.6) {
+      return { type: INTENT.ATTACK, value: Math.floor(baseDmg * 1.5), hits: 1, icon: '⚔️' };
+    }
+    // Normal attack
+    return { type: INTENT.ATTACK, value: baseDmg, hits: 1, icon: '🗡️' };
+  }
+
+  // Play a card from hand (by index in hand array)
+  playCard(handIdx) {
+    if (handIdx < 0 || handIdx >= this.hand.length) return null;
+    const cardId = this.hand[handIdx];
+    const card = CARDS[cardId];
+    if (!card) return null;
+    if (card.cost > this.dp) return { error: 'Not enough DP!' };
+
+    this.dp -= card.cost;
+    this.hand.splice(handIdx, 1);
+    this.discard.push(cardId);
+
+    const result = { card: card.name, type: card.cat, damage: 0, block: 0, healed: 0, effects: [] };
+    const str = this.pBuffs.strength || 0;
+    const isWeak = (this.pBuffs.weak || 0) > 0;
+    const eVuln = (this.eBuffs.vulnerable || 0) > 0;
+
+    // ATTACK
+    if (card.damage > 0 || card.cat === 'attack') {
+      let dmg = (card.damage || 0) + str;
+      if (card.effect === 'random_dmg') dmg = Math.floor(Math.random() * (card.effectVal || 15)) + 1;
+      if (isWeak) dmg = Math.floor(dmg * 0.75);
+      if (eVuln) dmg = Math.floor(dmg * 1.5);
+      // Apply to shield first
+      const blocked = Math.min(this.eShield, dmg);
+      this.eShield -= blocked;
+      const hpDmg = dmg - blocked;
+      this.enemy.stats.hp = Math.max(0, this.enemy.stats.hp - hpDmg);
+      result.damage = dmg;
+      this.log.push(`🃏 ${card.name} → ${dmg} dmg${blocked > 0 ? ` (${blocked} blocked)` : ''}`);
+    }
+
+    // BLOCK
+    if (card.block > 0) {
+      this.pShield += card.block;
+      result.block = card.block;
+      this.log.push(`🛡️ ${card.name} → +${card.block} shield`);
+    }
+
+    // EFFECTS
+    if (card.effect) {
+      switch (card.effect) {
+        case 'burn':       this.eBuffs.burn = (this.eBuffs.burn||0) + (card.effectVal||3); result.effects.push(`🔥 Burn ${card.effectVal}`); break;
+        case 'poison':     this.eBuffs.poison = (this.eBuffs.poison||0) + (card.effectVal||3); result.effects.push(`☠️ Poison ${card.effectVal}`); break;
+        case 'vulnerable': this.eBuffs.vulnerable = (this.eBuffs.vulnerable||0) + (card.effectVal||2); result.effects.push(`💔 Vuln ${card.effectVal}`); break;
+        case 'weak':       this.eBuffs.weak = (this.eBuffs.weak||0) + (card.effectVal||2); result.effects.push(`😵 Weak ${card.effectVal}`); break;
+        case 'heal':       { const h = card.effectVal||5; this.player.heal(h); result.healed = h; result.effects.push(`💚 +${h} HP`); break; }
+        case 'drain':      { const d = card.effectVal||5; this.player.heal(d); result.healed = d; result.effects.push(`🧛 +${d} HP`); break; }
+        case 'draw':       this._drawCards(card.effectVal||1); result.effects.push(`🎴 Draw ${card.effectVal}`); break;
+        case 'energy':     this.dp += (card.effectVal||1); result.effects.push(`⚡ +${card.effectVal} DP`); break;
+        case 'energy_perm':this.maxDP += (card.effectVal||1); this.dp += (card.effectVal||1); result.effects.push(`⚡⚡ +${card.effectVal} max DP`); break;
+        case 'thorns':     this.pBuffs.thorns += (card.effectVal||3); result.effects.push(`🌵 Thorns ${card.effectVal}`); break;
+        case 'regen':      this.pBuffs.regen += (card.effectVal||3); result.effects.push(`💚 Regen ${card.effectVal}/turn`); break;
+        case 'strength':   this.pBuffs.strength += (card.effectVal||2); result.effects.push(`💪 Str +${card.effectVal}`); break;
+        case 'cleanse':    this.pBuffs.weak = 0; this.pBuffs.vulnerable = 0; result.effects.push(`✨ Cleansed!`); break;
+      }
+    }
+
+    // Thorns damage to enemy (from player buffs)
+    if (card.cat === 'attack' && this.eBuffs.thorns > 0) {
+      // enemy thorns don't apply here, player thorns retaliates on enemy attack
+    }
+
+    if (this.enemy.stats.hp <= 0) { this.finished = true; this.winner = 'player'; }
+    return result;
+  }
+
+  // End player turn → enemy acts
+  endTurn() {
+    const results = [];
+
+    // Player end-of-turn effects
+    if (this.pBuffs.regen > 0) {
+      this.player.heal(this.pBuffs.regen);
+      results.push(`💚 Regen +${this.pBuffs.regen} HP`);
+    }
+    // Tick debuffs on player
+    if (this.pBuffs.weak > 0) this.pBuffs.weak--;
+    if (this.pBuffs.vulnerable > 0) this.pBuffs.vulnerable--;
+
+    // Enemy acts based on intent
+    const intent = this.enemyIntent;
+    const eStr = this.eBuffs.strength || 0;
+    const pVuln = (this.pBuffs.vulnerable || 0) > 0;
+    const eWeak = (this.eBuffs.weak || 0) > 0;
+
+    if (intent.type === INTENT.ATTACK) {
+      const hits = intent.hits || 1;
+      for (let h = 0; h < hits; h++) {
+        let dmg = intent.value + eStr;
+        if (eWeak) dmg = Math.floor(dmg * 0.75);
+        if (pVuln) dmg = Math.floor(dmg * 1.5);
+        const blocked = Math.min(this.pShield, dmg);
+        this.pShield -= blocked;
+        const hpDmg = dmg - blocked;
+        this.player.stats.hp = Math.max(0, this.player.stats.hp - hpDmg);
+        results.push(`👹 ${dmg} dmg${blocked > 0 ? ` (${blocked} blocked)` : ''}`);
+        // Thorns retaliation
+        if (this.pBuffs.thorns > 0) {
+          this.enemy.stats.hp = Math.max(0, this.enemy.stats.hp - this.pBuffs.thorns);
+          results.push(`🌵 Thorns! ${this.pBuffs.thorns} retaliatory`);
+        }
+      }
+    } else if (intent.type === INTENT.BLOCK) {
+      this.eShield += intent.value;
+      results.push(`👹 Shields up! +${intent.value}`);
+    } else if (intent.type === INTENT.BUFF) {
+      this.eBuffs.strength += intent.value;
+      results.push(`👹 Strength +${intent.value}!`);
+    } else if (intent.type === INTENT.DEBUFF) {
+      this.pBuffs.weak += intent.value;
+      results.push(`👹 Applied Weak ${intent.value}!`);
+    }
+
+    // Enemy DOT effects
+    if (this.eBuffs.burn > 0) {
+      this.enemy.stats.hp = Math.max(0, this.enemy.stats.hp - this.eBuffs.burn);
+      results.push(`🔥 Burn ${this.eBuffs.burn} to enemy`);
+      this.eBuffs.burn = Math.max(0, this.eBuffs.burn - 1);
+    }
+    if (this.eBuffs.poison > 0) {
+      this.enemy.stats.hp = Math.max(0, this.enemy.stats.hp - this.eBuffs.poison);
+      results.push(`☠️ Poison ${this.eBuffs.poison} to enemy`);
+      this.eBuffs.poison = Math.max(0, this.eBuffs.poison - 1);
+    }
+    // Tick enemy debuffs
+    if (this.eBuffs.weak > 0) this.eBuffs.weak--;
+    if (this.eBuffs.vulnerable > 0) this.eBuffs.vulnerable--;
+
+    // Check deaths
+    if (this.player.stats.hp <= 0) { this.finished = true; this.winner = 'enemy'; }
+    if (this.enemy.stats.hp <= 0) { this.finished = true; this.winner = 'player'; }
+
+    this.log.push(...results);
+
+    // Prepare next turn
+    if (!this.finished) {
+      this.turn++;
+      this.pShield = 0; // shield resets!
+      this.dp = this.maxDP;
+      this.discard.push(...this.hand);
+      this.hand = [];
+      this._drawCards(5);
+      this.enemyIntent = this._rollIntent();
+    }
+
+    return results;
+  }
+}
