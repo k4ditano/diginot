@@ -17,6 +17,10 @@ import {
   generateNPCTeam
 } from './map.js';
 import {
+  NODE, RELICS, EVENTS, CARDS as RUN_CARDS,
+  createRun, generateRunMap, generateCardReward, generateShopItems
+} from './run.js';
+import {
   BattleEngine, CardBattle, generateWildCreature, generateBoss, performFusion,
   checkAchievements, checkDailyLogin, simulatePvPBattle,
   exportTeamCode, importTeamCode,
@@ -68,12 +72,22 @@ let achievementPage = 0;
 let pendingAchievements = [];
 let battleSwapMode = false;
 let screenTransitioning = false;
+// V6: Roguelike run state
+let currentRun = null;
+let runNodeChoice = 0;
+let runRewardCards = null;
+let runRewardIdx = 0;
+let runEvent = null;
+let runEventIdx = 0;
+let runShop = null;
+let runShopIdx = 0;
 
 // ─── Screen Registry ───
 const MENU_ITEMS = [
   { id: 'status',      icon: '📊', label: 'Status' },
   { id: 'team',        icon: '👥', label: 'Team' },
   { id: 'explore',     icon: '🔍', label: 'Explore' },
+  { id: 'run',         icon: '🗼', label: 'Spire Run' },
   { id: 'train',       icon: '🏋️', label: 'Train' },
   { id: 'fusion',      icon: '🧬', label: 'Fusion' },
   { id: 'feed',        icon: '🍖', label: 'Feed' },
@@ -899,6 +913,11 @@ function render() {
     case 'crafting': html = renderCrafting(); break;
     case 'materials': html = renderMaterials(); break;
     case 'missions': html = renderMissions(); break;
+    case 'run': html = renderRunSelect(); break;
+    case 'runMap': html = renderRunMap(); break;
+    case 'runEvent': html = renderRunEvent(); break;
+    case 'runReward': html = renderRunReward(); break;
+    case 'runShop': html = renderRunShop(); break;
     case 'swapBattle': html = renderSwapBattle(); break;
     case 'moveLearn': html = renderMoveLearn(); break;
   }
@@ -958,6 +977,11 @@ function handleInput(btn) {
     case 'crafting': handleCraftingInput(btn); break;
     case 'materials': handleMaterialsInput(btn); break;
     case 'missions': handleMissionsInput(btn); break;
+    case 'run': handleRunSelectInput(btn); break;
+    case 'runMap': handleRunMapInput(btn); break;
+    case 'runEvent': handleRunEventInput(btn); break;
+    case 'runReward': handleRunRewardInput(btn); break;
+    case 'runShop': handleRunShopInput(btn); break;
     case 'swapBattle': handleSwapBattleInput(btn); break;
     case 'moveLearn': handleMoveLearnInput(btn); break;
   }
@@ -1253,6 +1277,45 @@ function handleBattleInput(btn) {
 }
 
 function handleBattleEnd() {
+  // ── V6: Run battle end ──
+  if (battle?._isRunBattle && currentRun) {
+    if (battle.winner === 'player') {
+      // Sync HP back to run
+      currentRun.hp = game.active.stats.hp;
+      currentRun.gold += 15 + Math.floor(battle.enemy.level * 1.5);
+      currentRun.score += 10;
+      // Apply relic end-of-battle effects
+      for (const r of currentRun.relics) {
+        if (RELICS[r]?.onBattleEnd) RELICS[r].onBattleEnd(currentRun);
+      }
+      SFX.victory();
+      // Elite/Boss gives relic
+      if (battle._isElite) {
+        const relic = getRandomRunRelic();
+        currentRun.relics.push(relic);
+        showMessage(`💀 Elite defeated!\n${RELICS[relic].icon} ${RELICS[relic].name}\n${RELICS[relic].desc}`);
+      }
+      // Card reward
+      runRewardCards = generateCardReward(currentRun);
+      runRewardIdx = 0;
+      battle = null;
+      setScreen('runReward');
+    } else {
+      // Run failed
+      SFX.defeat();
+      const gold = Math.floor(currentRun.gold * 0.5);
+      game.coins += gold;
+      game.trainerXP = (game.trainerXP || 0) + currentRun.score;
+      showMessage(`💀 Run Over! Floor ${currentRun.currentFloor + 1}/15\n+${gold} 🪙 · +${currentRun.score} Trainer XP`);
+      currentRun = null;
+      battle = null;
+      game.save();
+      setScreen('home'); screenStack = [];
+    }
+    return;
+  }
+
+  // ── Normal battle end ──
   if (battle.winner === 'player') {
     const enemy = battle.enemy;
     const xpBoost = (game.xpBoosterBattles || 0) > 0;
@@ -2584,5 +2647,342 @@ function handleMissionsInput(btn) {
     }
   }
   else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+// ═══════════════════════════════════════════
+// V6 — Roguelike Run Screens
+// ═══════════════════════════════════════════
+
+function renderRunSelect() {
+  const zones = getAvailableZones(game.active?.level || 1);
+  return `
+    <div class="screen-run-select">
+      <h2>🗼 Spire Run</h2>
+      <p class="run-intro">Choose a zone. Fight 15 floors. Build your deck. Survive.</p>
+      <div class="zone-list">
+        ${zones.map((z, i) => `
+          <div class="zone-card ${subIdx === i ? 'selected' : ''}" data-idx="${i}" style="border-color:${TYPES[z.types[0]]?.color || '#444'}">
+            <span class="zone-icon">${z.icon}</span>
+            <div class="zone-info">
+              <span>${z.name}</span>
+              <small>Lv.${z.minLevel}+ · 15 floors</small>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="hint">▲▼ Choose · A Start Run · B Back</div>
+    </div>`;
+}
+
+function handleRunSelectInput(btn) {
+  const zones = getAvailableZones(game.active?.level || 1);
+  if (btn === 'up') { subIdx = Math.max(0, subIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { subIdx = Math.min(zones.length - 1, subIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const zone = zones[subIdx];
+    currentRun = createRun(zone, game.active);
+    runNodeChoice = 0;
+    SFX.menuSelect();
+    setScreen('runMap');
+  }
+  else if (btn === 'b') { SFX.menuBack(); goBack(); }
+  render();
+}
+
+// ─── Run Map Screen ───
+function renderRunMap() {
+  if (!currentRun) return '<div class="empty">No run!</div>';
+  const run = currentRun;
+  const map = run.map;
+  const cf = run.currentFloor;
+
+  return `
+    <div class="screen-run-map">
+      <div class="run-hud">
+        <span>${run.zone.icon} Floor ${cf + 1}/15</span>
+        <span>❤️${run.hp}/${run.maxHp}</span>
+        <span>🪙${run.gold}</span>
+        <span>🎴${run.deck.length}</span>
+      </div>
+      <div class="run-relics">
+        ${run.relics.map(r => `<span class="relic-icon" title="${RELICS[r]?.name}">${RELICS[r]?.icon || '?'}</span>`).join('') || '<span class="no-relics">No relics</span>'}
+      </div>
+      <div class="run-path">
+        ${map.slice(Math.max(0, cf - 1), cf + 5).map((floor, fi) => {
+          const actualFloor = Math.max(0, cf - 1) + fi;
+          const isCurrent = actualFloor === cf;
+          return `<div class="run-floor ${isCurrent ? 'current-floor' : ''} ${actualFloor < cf ? 'visited-floor' : ''}">
+            <span class="floor-num">${actualFloor + 1}</span>
+            <div class="floor-nodes">
+              ${floor.map((node, ni) => `
+                <div class="run-node ${isCurrent && runNodeChoice === ni ? 'node-selected' : ''} ${node.visited ? 'node-visited' : ''} node-${node.type}"
+                     data-floor="${actualFloor}" data-node="${ni}">
+                  <span>${node.icon}</span>
+                </div>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="hint">${cf < map.length ? '◄► Choose path · A Enter' : 'Run complete!'} · B Abandon</div>
+    </div>`;
+}
+
+function handleRunMapInput(btn) {
+  if (!currentRun) return;
+  const floor = currentRun.map[currentRun.currentFloor];
+  if (!floor) { showMessage('Run complete!'); currentRun = null; setScreen('home'); return; }
+
+  if (btn === 'left')  { runNodeChoice = Math.max(0, runNodeChoice - 1); SFX.menuMove(); render(); return; }
+  if (btn === 'right') { runNodeChoice = Math.min(floor.length - 1, runNodeChoice + 1); SFX.menuMove(); render(); return; }
+
+  if (btn === 'a') {
+    const node = floor[runNodeChoice];
+    if (!node) return;
+    node.visited = true;
+    SFX.menuSelect();
+
+    switch (node.type) {
+      case NODE.BATTLE:
+      case NODE.ELITE: {
+        const wild = generateWildCreature(currentRun.zone, node.enemyLevel);
+        if (node.type === NODE.ELITE) {
+          wild.stats.maxHp = Math.floor(wild.stats.maxHp * 1.5);
+          wild.stats.hp = wild.stats.maxHp;
+          wild.nickname = '⭐ ' + wild.nickname;
+        }
+        // Sync run HP to creature
+        game.active.stats.hp = currentRun.hp;
+        game.active.stats.maxHp = currentRun.maxHp;
+        game.active.deck = [...currentRun.deck];
+        startRunBattle(wild, node.type === NODE.ELITE);
+        break;
+      }
+      case NODE.BOSS: {
+        const boss = generateBoss(currentRun.zone.id);
+        if (boss) {
+          game.active.stats.hp = currentRun.hp;
+          game.active.stats.maxHp = currentRun.maxHp;
+          game.active.deck = [...currentRun.deck];
+          startRunBattle(boss, true);
+        }
+        break;
+      }
+      case NODE.EVENT: {
+        runEvent = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+        runEventIdx = 0;
+        setScreen('runEvent');
+        break;
+      }
+      case NODE.REST: {
+        const healAmt = Math.floor(currentRun.maxHp * 0.3);
+        currentRun.hp = Math.min(currentRun.maxHp, currentRun.hp + healAmt);
+        showMessage(`🏕️ Rested!\n+${healAmt} HP (${currentRun.hp}/${currentRun.maxHp})`);
+        advanceRun();
+        break;
+      }
+      case NODE.SHOP: {
+        runShop = generateShopItems(currentRun);
+        runShopIdx = 0;
+        setScreen('runShop');
+        break;
+      }
+      case NODE.TREASURE: {
+        const relic = getRandomRunRelic();
+        currentRun.relics.push(relic);
+        showMessage(`📦 Treasure!\n${RELICS[relic].icon} ${RELICS[relic].name}\n${RELICS[relic].desc}`);
+        advanceRun();
+        break;
+      }
+    }
+  }
+
+  if (btn === 'b') {
+    showMessage('Abandon run?', () => {
+      currentRun = null;
+      setScreen('home');
+    });
+  }
+}
+
+function getRandomRunRelic() {
+  const owned = new Set(currentRun?.relics || []);
+  const available = Object.keys(RELICS).filter(r => !owned.has(r));
+  return available[Math.floor(Math.random() * available.length)] || 'burning_blood';
+}
+
+function startRunBattle(enemy, isElite) {
+  battle = new CardBattle(game.active, enemy);
+  // Apply relics
+  for (const r of (currentRun?.relics || [])) {
+    if (RELICS[r]?.onBattleStart) RELICS[r].onBattleStart(battle, currentRun);
+  }
+  battle._isRunBattle = true;
+  battle._isElite = isElite;
+  battleState = 'choose';
+  battleActionIdx = 0;
+  playMusic('battle');
+  setScreen('battle');
+}
+
+function advanceRun() {
+  if (!currentRun) return;
+  currentRun.currentFloor++;
+  runNodeChoice = 0;
+  if (currentRun.currentFloor >= currentRun.map.length) {
+    // RUN WON!
+    const bonus = 500 + currentRun.score;
+    game.coins += bonus;
+    game.trainerXP = (game.trainerXP || 0) + 200;
+    showMessage(`🗼 SPIRE CLEARED!\n+${bonus} 🪙\n+200 Trainer XP!`);
+    currentRun = null;
+    game.save();
+    setScreen('home');
+  } else {
+    setScreen('runMap');
+  }
+}
+
+// ─── Run Event Screen ───
+function renderRunEvent() {
+  if (!runEvent) return '<div class="empty">No event</div>';
+  return `
+    <div class="screen-run-event">
+      <h2>${runEvent.title}</h2>
+      <p class="event-text">${runEvent.text}</p>
+      <div class="event-choices">
+        ${runEvent.choices.map((ch, i) => `
+          <div class="event-choice ${runEventIdx === i ? 'selected' : ''}" data-idx="${i}">
+            ${ch.label}
+          </div>`).join('')}
+      </div>
+      <div class="run-hp-bar">❤️ ${currentRun?.hp}/${currentRun?.maxHp} · 🪙${currentRun?.gold}</div>
+      <div class="hint">▲▼ Choose · A Select</div>
+    </div>`;
+}
+
+function handleRunEventInput(btn) {
+  if (btn === 'up') { runEventIdx = Math.max(0, runEventIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { runEventIdx = Math.min((runEvent?.choices?.length || 1) - 1, runEventIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    const choice = runEvent.choices[runEventIdx];
+    if (choice) {
+      const result = choice.apply(currentRun);
+      SFX.menuSelect();
+      showMessage(result || 'Done.');
+      runEvent = null;
+      advanceRun();
+    }
+  }
+  render();
+}
+
+// ─── Run Card Reward Screen ───
+function renderRunReward() {
+  if (!runRewardCards) return '<div class="empty">No reward</div>';
+  return `
+    <div class="screen-run-reward">
+      <h2>🎴 Choose a Card!</h2>
+      <div class="reward-cards">
+        ${runRewardCards.map((id, i) => {
+          const card = CARDS[id];
+          if (!card) return '';
+          const typeColor = TYPES[card.type]?.color || '#888';
+          return `<div class="reward-card ${runRewardIdx === i ? 'selected' : ''} card-${card.cat}" data-idx="${i}">
+            <div class="card-cost" style="background:${typeColor}">${card.cost}</div>
+            <div class="card-name">${card.name}</div>
+            <div class="card-desc">${card.desc}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="reward-skip ${runRewardIdx === runRewardCards.length ? 'selected' : ''}">Skip</div>
+      <div class="hint">◄► Choose · A Add to Deck · ▼ Skip</div>
+    </div>`;
+}
+
+function handleRunRewardInput(btn) {
+  const max = runRewardCards ? runRewardCards.length : 0;
+  if (btn === 'left')  { runRewardIdx = Math.max(0, runRewardIdx - 1); SFX.menuMove(); }
+  if (btn === 'right') { runRewardIdx = Math.min(max, runRewardIdx + 1); SFX.menuMove(); }
+  if (btn === 'down')  { runRewardIdx = max; SFX.menuMove(); } // skip
+
+  if (btn === 'a') {
+    if (runRewardIdx < max) {
+      const cardId = runRewardCards[runRewardIdx];
+      currentRun.deck.push(cardId);
+      SFX.capture();
+      showMessage(`🎴 Added ${CARDS[cardId]?.name} to deck!`);
+    }
+    runRewardCards = null;
+    advanceRun();
+  }
+  render();
+}
+
+// ─── Run Shop Screen ───
+function renderRunShop() {
+  if (!runShop) return '<div class="empty">No shop</div>';
+  return `
+    <div class="screen-run-shop">
+      <h2>🛒 Shop — 🪙${currentRun?.gold || 0}</h2>
+      <div class="shop-list">
+        ${runShop.cards.map((item, i) => {
+          const card = CARDS[item.cardId];
+          if (!card) return '';
+          return `<div class="shop-item ${runShopIdx === i ? 'selected' : ''}" data-idx="${i}">
+            <span class="shop-icon card-${card.cat}">🎴</span>
+            <div class="shop-info"><span>${card.name}</span><small>${card.desc}</small></div>
+            <span class="shop-price">🪙${item.price}</span>
+          </div>`;
+        }).join('')}
+        <div class="shop-item ${runShopIdx === runShop.cards.length ? 'selected' : ''}">
+          <span class="shop-icon">🗑️</span>
+          <div class="shop-info"><span>Remove a card</span><small>Delete a Strike or Defend</small></div>
+          <span class="shop-price">🪙${runShop.removePrice}</span>
+        </div>
+        <div class="shop-item ${runShopIdx === runShop.cards.length + 1 ? 'selected' : ''}">
+          <span class="shop-icon">💊</span>
+          <div class="shop-info"><span>Heal ${runShop.healAmount} HP</span></div>
+          <span class="shop-price">🪙${runShop.healPrice}</span>
+        </div>
+      </div>
+      <div class="hint">▲▼ Browse · A Buy · B Leave</div>
+    </div>`;
+}
+
+function handleRunShopInput(btn) {
+  const maxIdx = (runShop?.cards?.length || 0) + 1;
+  if (btn === 'up') { runShopIdx = Math.max(0, runShopIdx - 1); SFX.menuMove(); }
+  else if (btn === 'down') { runShopIdx = Math.min(maxIdx, runShopIdx + 1); SFX.menuMove(); }
+  else if (btn === 'a') {
+    if (runShopIdx < runShop.cards.length) {
+      // Buy card
+      const item = runShop.cards[runShopIdx];
+      if (currentRun.gold >= item.price) {
+        currentRun.gold -= item.price;
+        currentRun.deck.push(item.cardId);
+        SFX.capture();
+        showMessage(`Bought ${CARDS[item.cardId]?.name}!`);
+        runShop.cards.splice(runShopIdx, 1);
+      } else { SFX.menuBack(); showMessage('Not enough gold!'); }
+    } else if (runShopIdx === runShop.cards.length) {
+      // Remove card
+      if (currentRun.gold >= runShop.removePrice) {
+        const idx = currentRun.deck.indexOf('strike');
+        if (idx !== -1) {
+          currentRun.gold -= runShop.removePrice;
+          currentRun.deck.splice(idx, 1);
+          SFX.menuSelect(); showMessage('Removed a Strike!');
+        } else { showMessage('No Strikes to remove!'); }
+      } else { SFX.menuBack(); showMessage('Not enough gold!'); }
+    } else {
+      // Heal
+      if (currentRun.gold >= runShop.healPrice) {
+        currentRun.gold -= runShop.healPrice;
+        currentRun.hp = Math.min(currentRun.maxHp, currentRun.hp + runShop.healAmount);
+        SFX.heal(); showMessage(`+${runShop.healAmount} HP!`);
+      } else { SFX.menuBack(); showMessage('Not enough gold!'); }
+    }
+  }
+  else if (btn === 'b') { runShop = null; advanceRun(); }
   render();
 }
