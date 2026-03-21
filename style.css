@@ -2448,74 +2448,105 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 3px;
+  gap: 2px;
   padding: 2px;
 }
 
-/* Top area: enemy + player info rows */
-.cb-top {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.cb-enemy-row, .cb-player-row {
+/* Arena: player LEFT vs enemy RIGHT */
+.cb-arena {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 4px;
-  background: rgba(255,255,255,0.02);
-  border-radius: 4px;
-}
-
-.cb-enemy-row { border-left: 2px solid rgba(255,80,80,0.4); }
-.cb-player-row { border-left: 2px solid rgba(0,200,150,0.4); }
-
-.cb-sprite-sm {
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px;
+  background: linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,20,15,0.15) 100%);
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.04);
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
 }
 
-.cb-sprite-sm img {
+.cb-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.cb-left { align-items: center; }
+.cb-right { align-items: center; }
+
+.cb-vs {
+  font-size: 8px;
+  color: rgba(255,255,255,0.12);
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.cb-sprite-lg {
+  width: 56px;
+  height: 56px;
+}
+
+.cb-sprite-lg img {
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
   object-fit: contain;
+  filter: drop-shadow(0 1px 4px rgba(0,0,0,0.5));
 }
 
-.cb-enemy-info, .cb-player-info { flex: 1; min-width: 0; }
-.cb-name { font-size: 6px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.cb-meta {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  margin-top: 1px;
-  flex-wrap: wrap;
+.cb-right .cb-sprite-lg img {
+  transform: scaleX(-1); /* Enemy faces left */
 }
 
-.intent {
+.cb-side-name {
+  font-size: 5px;
+  color: var(--text-primary);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+}
+
+.cb-intent-top {
+  min-height: 14px;
+}
+
+.shield-badge {
   font-size: 6px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  display: inline-block;
-  font-weight: bold;
+  color: #66aaff;
+  background: rgba(50,100,200,0.15);
+  padding: 0 3px;
+  border-radius: 2px;
 }
 
-.intent-atk { background: rgba(255,50,50,0.25); color: #ff8888; }
-.intent-other { background: rgba(100,100,255,0.25); color: #aaaaff; }
+.cb-buffs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 
 .buff-tag {
-  font-size: 5px;
-  padding: 0 3px;
+  font-size: 4px;
+  padding: 0 2px;
   border-radius: 2px;
   background: rgba(255,255,255,0.08);
   color: var(--text-dim);
 }
 
-.shield-badge { font-size: 6px; color: #66aaff; }
+.intent {
+  font-size: 7px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  display: inline-block;
+  font-weight: bold;
+}
+
+.intent-atk { background: rgba(255,50,50,0.2); color: #ff7777; }
+.intent-other { background: rgba(100,100,255,0.2); color: #9999ff; }
 
 /* Battle log */
 .cb-log {
