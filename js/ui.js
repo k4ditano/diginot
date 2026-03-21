@@ -21,6 +21,9 @@ import {
   createRun, generateRunMap, generateCardReward, generateShopItems
 } from './run.js';
 import {
+  hasAPIKey, setAPIKey, aiGenerateEvent, aiGenerateCardReward, aiGenerateBossDialogue, aiPregenerate
+} from './ai.js';
+import {
   BattleEngine, CardBattle, generateWildCreature, generateBoss, performFusion,
   checkAchievements, checkDailyLogin, simulatePvPBattle,
   exportTeamCode, importTeamCode,
@@ -1296,7 +1299,19 @@ function handleBattleEnd() {
         showMessage(`💀 Elite defeated!\n${RELICS[relic].icon} ${RELICS[relic].name}\n${RELICS[relic].desc}`);
       }
       // Card reward
-      runRewardCards = generateCardReward(currentRun);
+      // Try AI-generated card reward, fall back to procedural
+      const aiCards = currentRun._aiCards?.shift();
+      if (aiCards) {
+        // Register AI card in CARDS if not already there
+        if (typeof aiCards === 'object' && aiCards.id) {
+          CARDS[aiCards.id] = aiCards;
+          runRewardCards = [aiCards.id, ...generateCardReward(currentRun).slice(0, 2)];
+        } else {
+          runRewardCards = generateCardReward(currentRun);
+        }
+      } else {
+        runRewardCards = generateCardReward(currentRun);
+      }
       runRewardIdx = 0;
       battle = null;
       setScreen('runReward');
@@ -2335,6 +2350,10 @@ function startAutoSave() {
 
 // ─── Init ───
 export function init() {
+  // Auto-set AI API key if not already set
+  if (!hasAPIKey()) {
+    setAPIKey('sk-cp-loYPxqBWYYTXgWXJAV7iIJ008mj9rOzjNVfSUzfvADgEKv6ThIVYbAiC0j7_vlhrBCDKyadblOuSveRiwyT274QLB6bKW_8nqHIzLIQII7YPnmHhodbIlcY');
+  }
   render();
   bindControls();
   startIdleAnimation();
@@ -2681,9 +2700,20 @@ function handleRunSelectInput(btn) {
   else if (btn === 'a') {
     const zone = zones[subIdx];
     currentRun = createRun(zone, game.active);
+    currentRun._aiEvents = [];
+    currentRun._aiCards = [];
     runNodeChoice = 0;
     SFX.menuSelect();
     setScreen('runMap');
+    // Pre-generate AI content in background (non-blocking)
+    if (hasAPIKey()) {
+      aiPregenerate(game.active.type, zone.id).then(result => {
+        if (currentRun) {
+          currentRun._aiEvents = result.events || [];
+          currentRun._aiCards = result.cards || [];
+        }
+      });
+    }
   }
   else if (btn === 'b') { SFX.menuBack(); goBack(); }
   render();
@@ -2763,12 +2793,32 @@ function handleRunMapInput(btn) {
           game.active.stats.hp = currentRun.hp;
           game.active.stats.maxHp = currentRun.maxHp;
           game.active.deck = [...currentRun.deck];
-          startRunBattle(boss, true);
+          SFX.bossAppear();
+          if (hasAPIKey()) {
+            aiGenerateBossDialogue(boss.displayName, boss.type, cf).then(d => {
+              const msg = d?.entrance ? `👹 ${boss.displayName}:\n"${d.entrance}"` : `👹 BOSS: ${boss.displayName}!`;
+              showMessage(msg, () => startRunBattle(boss, true));
+            });
+          } else {
+            showMessage(`👹 BOSS: ${boss.displayName}!`, () => startRunBattle(boss, true));
+          }
         }
         break;
       }
       case NODE.EVENT: {
-        runEvent = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+        // Use AI-generated event if available, otherwise hardcoded
+        const aiEv = currentRun._aiEvents?.shift();
+        if (aiEv) {
+          runEvent = {
+            ...aiEv,
+            choices: aiEv.choices.map(ch => ({
+              label: ch.label,
+              apply: (run) => applyAIEffect(run, ch.effect),
+            })),
+          };
+        } else {
+          runEvent = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+        }
         runEventIdx = 0;
         setScreen('runEvent');
         break;
@@ -2985,4 +3035,34 @@ function handleRunShopInput(btn) {
   }
   else if (btn === 'b') { runShop = null; advanceRun(); }
   render();
+}
+
+// ─── V6: AI Effect Parser ───
+function applyAIEffect(run, effectStr) {
+  if (!effectStr || effectStr === 'none') return 'Nothing happened.';
+  const results = [];
+  const parts = effectStr.split(',');
+  for (const part of parts) {
+    const [key, val] = part.trim().split(':');
+    const num = parseInt(val) || 0;
+    switch (key.trim()) {
+      case 'hp':    run.hp = Math.max(1, Math.min(run.maxHp, run.hp + num)); results.push(`${num > 0 ? '+' : ''}${num} HP`); break;
+      case 'gold':  run.gold = Math.max(0, run.gold + num); results.push(`${num > 0 ? '+' : ''}${num} gold`); break;
+      case 'heal':  run.hp = Math.min(run.maxHp, run.hp + Math.abs(num)); results.push(`+${Math.abs(num)} HP`); break;
+      case 'card': {
+        const pool = Object.keys(CARDS).filter(c => CARDS[c].type === run.notType || CARDS[c].type === 'neutral');
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (pick) { run.deck.push(pick); results.push(`+${CARDS[pick].name}!`); }
+        break;
+      }
+      case 'relic': {
+        const owned = new Set(run.relics);
+        const avail = Object.keys(RELICS).filter(r => !owned.has(r));
+        if (avail.length) { const r = avail[Math.floor(Math.random() * avail.length)]; run.relics.push(r); results.push(`${RELICS[r].icon} ${RELICS[r].name}!`); }
+        break;
+      }
+      default: results.push(part);
+    }
+  }
+  return results.join('\n') || 'Done.';
 }
